@@ -1,0 +1,157 @@
+.register-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f4f7f6;
+  padding: 20px 0;
+}
+
+.register-card {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 500px;
+}
+
+.register-card h2 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 25px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  color: #34495e;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: border-color 0.3s;
+}
+
+.form-group input:focus {
+  border-color: #3498db;
+  outline: none;
+}
+
+.btn-submit {
+  width: 100%;
+  padding: 12px;
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 10px;
+  transition: background-color 0.3s;
+}
+
+.btn-submit:hover {
+  background-color: #27ae60;
+}
+
+.alert {
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.alert-danger {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.alert-success {
+  background-color: #2ecc71;
+  color: white;
+}
+
+.link-login {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 14px;
+  color: #7f8c8d;
+}
+
+.link-login a {
+  color: #3498db;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.link-login a:hover {
+  text-decoration: underline;
+}
+/* --- Choix du type de compte --- */
+.type-switch {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.type-switch button {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #c8d1d0;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.type-switch button.active {
+  background: #2c3e50;
+  border-color: #2c3e50;
+  color: #fff;
+}
+
+.section-title {
+  margin: 18px 0 8px;
+  font-size: 1rem;
+  color: #2c3e50;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: #6b7a78;
+  margin: 0 0 10px;
+}
+
+select,
+textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-family: inherit;
+}

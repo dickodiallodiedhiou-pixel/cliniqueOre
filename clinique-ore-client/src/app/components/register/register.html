@@ -1,0 +1,105 @@
+<div class="register-container">
+  <div class="register-card">
+    <h2>Inscription - Clinique Oré</h2>
+
+    <div class="type-switch">
+      <button type="button" [class.active]="accountType === 'patient'" (click)="setAccountType('patient')">
+        Je suis patient
+      </button>
+      <button type="button" [class.active]="accountType === 'medecin'" (click)="setAccountType('medecin')">
+        Je suis médecin
+      </button>
+    </div>
+
+    <div *ngIf="errorMessage" class="alert alert-danger" style="white-space: pre-line">
+      {{ errorMessage }}
+    </div>
+
+    <div *ngIf="successMessage" class="alert alert-success">
+      {{ successMessage }}
+    </div>
+
+    <form (ngSubmit)="onRegister()">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Prénom</label>
+          <input type="text" [(ngModel)]="userData.prenom" name="prenom" required placeholder="Votre prénom">
+        </div>
+        <div class="form-group">
+          <label>Nom</label>
+          <input type="text" [(ngModel)]="userData.nom" name="nom" required placeholder="Votre nom">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Adresse Email</label>
+        <input type="email" [(ngModel)]="userData.email" name="email" required placeholder="exemple@domain.com">
+      </div>
+
+      <div class="form-group">
+        <label>Téléphone</label>
+        <input type="text" [(ngModel)]="userData.telephone" name="telephone"
+               [required]="accountType === 'medecin'" placeholder="Numéro de téléphone">
+      </div>
+
+      <!-- Informations professionnelles : médecin uniquement -->
+      <ng-container *ngIf="accountType === 'medecin'">
+        <h3 class="section-title">Informations professionnelles</h3>
+
+        <div class="form-group">
+          <label>Spécialité</label>
+          <select [(ngModel)]="medecin.specialite_id" name="specialite_id" required>
+            <option [ngValue]="null" disabled>Choisissez une spécialité</option>
+            <option *ngFor="let s of specialites" [ngValue]="s.id">{{ s.nom }}</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>N° d'inscription à l'Ordre</label>
+            <input type="text" [(ngModel)]="medecin.numero_ordre" name="numero_ordre" required
+                   placeholder="Numéro d'ordre">
+          </div>
+          <div class="form-group">
+            <label>Tarif consultation (FCFA)</label>
+            <input type="number" min="0" [(ngModel)]="medecin.tarif_consultation" name="tarif_consultation"
+                   required placeholder="Ex : 10000">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Présentation (facultatif)</label>
+          <textarea [(ngModel)]="medecin.biographie" name="biographie" rows="3" maxlength="2000"
+                    placeholder="Parcours, domaines d'expertise..."></textarea>
+        </div>
+
+        <h3 class="section-title">Justificatifs</h3>
+        <p class="hint">PDF, JPG ou PNG — 2 Mo maximum par document. Ils seront examinés par l'administrateur.</p>
+
+        <div class="form-group" *ngFor="let j of justificatifs">
+          <label>{{ j.label }}</label>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFileChange($event, j.key)">
+        </div>
+      </ng-container>
+
+      <div class="form-group">
+        <label>Mot de passe</label>
+        <input type="password" [(ngModel)]="userData.password" name="password" required
+               placeholder="8 caractères minimum" minlength="8">
+      </div>
+
+      <div class="form-group">
+        <label>Confirmer le mot de passe</label>
+        <input type="password" [(ngModel)]="userData.password_confirmation" name="password_confirmation" required placeholder="Confirmez votre mot de passe">
+      </div>
+
+      <button type="submit" class="btn-submit" [disabled]="loading">
+        {{ loading ? 'Envoi...' : (accountType === 'medecin' ? 'Envoyer ma demande' : 'Créer mon compte') }}
+      </button>
+
+      <p class="link-login">
+        Déjà un compte ? <a routerLink="/login">Se connecter</a>
+      </p>
+    </form>
+  </div>
+</div>
