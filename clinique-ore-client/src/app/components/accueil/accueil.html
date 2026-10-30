@@ -1,0 +1,156 @@
+<app-site-header></app-site-header>
+
+<!-- ===== Haut de page ===== -->
+<section class="hero">
+  <div class="hero-int">
+    <div class="hero-texte">
+      <h1>Prenez rendez-vous avec les médecins de la Clinique Oré</h1>
+      <p class="sous-titre">
+        Trouvez un praticien vérifié, choisissez la date qui vous convient et réservez en quelques clics.
+      </p>
+
+      <form class="recherche" (ngSubmit)="rechercher()">
+        <div class="champ">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input type="search" name="q" [(ngModel)]="q" placeholder="Nom du médecin" aria-label="Nom du médecin">
+        </div>
+        <div class="champ">
+          <select name="spec" [(ngModel)]="spec" aria-label="Spécialité">
+            <option value="">Toutes les spécialités</option>
+            <option *ngFor="let s of specialites()" [value]="s.nom">{{ s.nom }}</option>
+          </select>
+        </div>
+        <button type="submit" class="bouton-recherche">Rechercher</button>
+      </form>
+
+      <p class="mini" *ngIf="medecins().length > 0">
+        {{ medecins().length }} médecin{{ medecins().length > 1 ? 's' : '' }} vérifié{{ medecins().length > 1 ? 's' : '' }}
+        · {{ nbSpecialites() }} spécialité{{ nbSpecialites() > 1 ? 's' : '' }}
+      </p>
+    </div>
+
+    <div class="hero-photo">
+      <app-photo src="images/hero-medecin.jpg" alt="Médecin de la Clinique Oré" forme="28px 28px 28px 110px"></app-photo>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Deux cartes d'accès rapide ===== -->
+<section class="acces">
+  <a class="carte-acces" routerLink="/annuaire">
+    <span class="pastille-ico">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <span>
+      <strong>Trouver un médecin</strong>
+      <span class="muted">Parcourez l'annuaire par spécialité.</span>
+    </span>
+  </a>
+  <a class="carte-acces" routerLink="/patient">
+    <span class="pastille-ico">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <span>
+      <strong>Mes rendez-vous</strong>
+      <span class="muted">Consultez et gérez vos réservations.</span>
+    </span>
+  </a>
+</section>
+
+<!-- ===== Section 1 : photo à gauche ===== -->
+<section class="bloc duo">
+  <div class="duo-photo carre">
+    <div class="fond-decal"></div>
+    <div class="cadre-photo"><app-photo src="images/prise-rendez-vous.jpg" alt="Patient en consultation" forme="26px"></app-photo></div>
+  </div>
+  <div class="duo-texte">
+    <h2>Prenez rendez-vous en quelques minutes</h2>
+    <p>
+      Choisissez un médecin selon sa spécialité, indiquez la date et l'heure souhaitées, puis suivez la
+      confirmation depuis votre espace patient. Vous pouvez annuler un rendez-vous à tout moment.
+    </p>
+    <a routerLink="/patient" class="btn">Prendre rendez-vous</a>
+  </div>
+</section>
+
+<!-- ===== Section 2 : bande claire, photo ronde à droite ===== -->
+<section class="bande">
+  <div class="bloc duo inverse">
+    <div class="duo-texte">
+      <h2>Des médecins vérifiés, en toute confiance</h2>
+      <p>
+        Chaque médecin fournit son diplôme, son autorisation d'exercice et une pièce d'identité.
+        L'administrateur de la clinique contrôle ces documents avant de publier le profil dans l'annuaire.
+      </p>
+      <a routerLink="/annuaire" class="btn">Consulter l'annuaire</a>
+    </div>
+    <div class="duo-photo rond">
+      <app-photo src="images/medecins-verifies.jpg" alt="Équipe médicale" forme="50%"></app-photo>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Section 3 : photo ronde à gauche ===== -->
+<section class="bloc duo">
+  <div class="duo-photo rond">
+    <app-photo src="images/espace-patient.jpg" alt="Patient utilisant son espace personnel" forme="50%"></app-photo>
+  </div>
+  <div class="duo-texte">
+    <h2>Un espace patient simple et clair</h2>
+    <p>
+      Retrouvez tous vos rendez-vous au même endroit, avec leur statut mis à jour en temps réel :
+      en attente, confirmé, annulé ou terminé.
+    </p>
+    <a routerLink="/register" class="btn light">Créer mon compte</a>
+  </div>
+</section>
+
+<!-- ===== Comment ça marche ===== -->
+<section class="bloc" id="comment">
+  <h2 class="titre-section">Comment ça marche ?</h2>
+  <div class="etapes">
+    <div class="etape"><span class="num">1</span><h3>Créez votre compte</h3><p class="muted">Renseignez vos informations et ajoutez votre photo de profil.</p></div>
+    <div class="etape"><span class="num">2</span><h3>Choisissez votre médecin</h3><p class="muted">Recherchez par nom ou par spécialité dans l'annuaire.</p></div>
+    <div class="etape"><span class="num">3</span><h3>Réservez votre rendez-vous</h3><p class="muted">Indiquez la date souhaitée, le médecin confirme depuis son espace.</p></div>
+  </div>
+</section>
+
+<!-- ===== Spécialités ===== -->
+<section class="bloc" *ngIf="specialites().length > 0">
+  <h2 class="titre-section">Nos spécialités</h2>
+  <div class="chips-spec">
+    <a *ngFor="let s of specialites()" class="spec" routerLink="/annuaire" [queryParams]="{ spec: s.nom }">{{ s.nom }}</a>
+  </div>
+</section>
+
+<!-- ===== Médecins de l'annuaire ===== -->
+<section class="bloc" *ngIf="vedettes().length > 0">
+  <h2 class="titre-section">Nos médecins</h2>
+  <div class="grille-med">
+    <a class="card vedette" *ngFor="let m of vedettes()" routerLink="/annuaire" [queryParams]="{ q: m.nom }">
+      <app-avatar [url]="m.photo_url" [nom]="m.nom" [taille]="80"></app-avatar>
+      <h3>Dr {{ m.nom }}</h3>
+      <span class="badge">{{ m.specialite }}</span>
+    </a>
+  </div>
+  <p style="text-align: center; margin-top: 8px">
+    <a routerLink="/annuaire" class="btn light">Voir tous les médecins</a>
+  </p>
+</section>
+
+<!-- ===== Appel aux médecins ===== -->
+<section class="bloc">
+  <div class="cta">
+    <div class="cta-texte">
+      <h2>Vous êtes médecin ?</h2>
+      <p>
+        Déposez vos justificatifs. Après validation par l'administrateur, votre profil est publié dans
+        l'annuaire et vous pouvez gérer vos rendez-vous.
+      </p>
+      <a routerLink="/register" [queryParams]="{ type: 'medecin' }" class="btn-blanc">Rejoindre la clinique</a>
+    </div>
+    <div class="cta-photo"><app-photo src="images/rejoindre-equipe.jpg" alt="Médecin au travail" forme="0"></app-photo></div>
+  </div>
+</section>
+
+<app-site-footer></app-site-footer>

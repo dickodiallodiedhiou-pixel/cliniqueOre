@@ -1,0 +1,14 @@
+Photos de la page d'accueil de Clinique Oré
+============================================
+Déposez ici vos photos (JPG, de préférence 1600 px de large, moins de 400 Ko chacune)
+avec EXACTEMENT ces noms :
+
+  hero-medecin.jpg        Haut de page : médecin souriant (portrait ou à mi-corps), format paysage ou carré
+  prise-rendez-vous.jpg   Section « Prenez rendez-vous » : patient avec un médecin, ou personne consultant un agenda
+  medecins-verifies.jpg   Section « Médecins vérifiés » : équipe médicale, médecin en blouse blanche
+  espace-patient.jpg      Section « Espace patient » : personne utilisant son téléphone ou son ordinateur
+  rejoindre-equipe.jpg    Bandeau « Vous êtes médecin ? » (facultatif)
+
+Tant qu'une photo est absente, un visuel de remplacement discret s'affiche à sa place.
+Utilisez uniquement des photos dont vous avez les droits (vos propres photos, ou des
+banques d'images libres de droits : Unsplash, Pexels...).

@@ -1,40 +1,39 @@
-<div class="login-container">
-  <div class="login-card">
-    <h2>Connexion - Clinique Oré</h2>
-    
-    <div *ngIf="errorMessage" class="alert-error">
-      {{ errorMessage }}
+<div class="auth-page">
+  <div class="auth-card">
+    <a routerLink="/" class="retour">&larr; Retour à l'accueil</a>
+    <div class="logo-zone"><app-logo></app-logo></div>
+    <h1>Connexion</h1>
+    <p class="sous">Accédez à votre espace Clinique Oré.</p>
+
+    <div *ngIf="sessionActive() as u" class="alert-box warn">
+      Vous êtes déjà connecté en tant que <strong>{{ u.name }}</strong>.
+      <div class="row" style="margin-top: 8px">
+        <button type="button" class="btn small" (click)="continuer()">Continuer</button>
+        <button type="button" class="btn small light" (click)="changerDeCompte()">Changer de compte</button>
+      </div>
     </div>
 
+    <div *ngIf="errorMessage()" class="alert-box error">{{ errorMessage() }}</div>
+
     <form (ngSubmit)="onLogin()">
-      <div class="form-group">
-        <label for="email">Adresse Email</label>
-        <input 
-          type="email" 
-          id="email" 
-          [(ngModel)]="credentials.email" 
-          name="email" 
-          required 
-          placeholder="Entrez votre email">
+      <div class="field">
+        <label for="email">Adresse email</label>
+        <input type="email" id="email" [(ngModel)]="credentials.email" name="email" required
+               placeholder="vous@exemple.com" autocomplete="email">
       </div>
 
-      <div class="form-group">
+      <div class="field">
         <label for="password">Mot de passe</label>
-        <input 
-          type="password" 
-          id="password" 
-          [(ngModel)]="credentials.password" 
-          name="password" 
-          required 
-          placeholder="Entrez votre mot de passe">
+        <input type="password" id="password" [(ngModel)]="credentials.password" name="password" required
+               placeholder="Votre mot de passe" autocomplete="current-password">
       </div>
 
-      <button type="submit" class="btn-submit" [disabled]="loading">
-        {{ loading ? 'Connexion...' : 'Se connecter' }}
+      <button type="submit" class="btn btn-block" [disabled]="loading()">
+        {{ loading() ? 'Connexion en cours...' : 'Se connecter' }}
       </button>
-      <p style="text-align: center; margin-top: 15px;">
-          Pas encore de compte ? <a routerLink="/register">S'inscrire</a>
-      </p>
     </form>
+
+    <p class="lien-bas">Pas encore de compte ? <a routerLink="/register">Créer un compte</a></p>
+    <p class="lien-bas"><a routerLink="/annuaire">Consulter l'annuaire des médecins</a></p>
   </div>
 </div>

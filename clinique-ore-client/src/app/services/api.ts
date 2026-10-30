@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment.development';
 
@@ -11,8 +11,8 @@ export class ApiService {
 
   constructor(private http: HttpClient) { }
 
-  // Inscription d'un patient
-  register(data: any): Observable<any> {
+  // Inscription d'un patient (multipart : informations + photo)
+  register(data: FormData): Observable<any> {
     return this.http.post(`${this.apiUrl}/register`, data);
   }
 
@@ -47,6 +47,25 @@ export class ApiService {
     return this.http.get<any[]>(`${this.apiUrl}/medecins${query}`);
   }
 
+  // Créneaux libres d'un médecin (14 prochains jours) : { '2026-10-26': ['09:00', '09:30'], ... }
+  getCreneaux(medecinId: number): Observable<Record<string, string[]>> {
+    return this.http.get<Record<string, string[]>>(`${this.apiUrl}/medecins/${medecinId}/creneaux`);
+  }
+
+  // ----- Profil -----
+  updateProfil(data: FormData): Observable<any> {
+    return this.http.post(`${this.apiUrl}/me`, data);
+  }
+
+  // ----- Disponibilités du médecin -----
+  getDisponibilites(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/medecin/disponibilites`);
+  }
+
+  saveDisponibilites(plages: any[]): Observable<any> {
+    return this.http.put(`${this.apiUrl}/medecin/disponibilites`, { plages });
+  }
+
   // ----- Rendez-vous -----
   getRendezVous(): Observable<any[]> {
     return this.http.get<any[]>(`${this.apiUrl}/rendez-vous`);
@@ -54,6 +73,10 @@ export class ApiService {
 
   createRendezVous(data: { medecin_id: number; date_heure: string; motif?: string }): Observable<any> {
     return this.http.post(`${this.apiUrl}/rendez-vous`, data);
+  }
+
+  modifierRendezVous(id: number, data: { date_heure: string; motif?: string }): Observable<any> {
+    return this.http.patch(`${this.apiUrl}/rendez-vous/${id}`, data);
   }
 
   annulerRendezVous(id: number): Observable<any> {
@@ -64,9 +87,37 @@ export class ApiService {
     return this.http.patch(`${this.apiUrl}/rendez-vous/${id}/statut`, { statut });
   }
 
-  // ----- Administration : validation des médecins -----
-  adminGetMedecins(statut: 'pending' | 'approved' | 'rejected'): Observable<any[]> {
-    return this.http.get<any[]>(`${this.apiUrl}/admin/medecins?statut=${statut}`);
+  // ----- Administration -----
+  // Construit des paramètres d'URL en ignorant les valeurs vides
+  private params(obj: Record<string, any>): HttpParams {
+    let p = new HttpParams();
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== null && v !== undefined && v !== '') {
+        p = p.set(k, String(v));
+      }
+    }
+    return p;
+  }
+
+  adminStats(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/tableau-de-bord`);
+  }
+
+  // Médecins (réponse paginée : { data, current_page, last_page, total })
+  adminMedecins(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/medecins`, { params: this.params(filtres) });
+  }
+
+  adminCreerMedecin(data: FormData): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/medecins`, data);
+  }
+
+  adminModifierMedecin(id: number, data: FormData): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/medecins/${id}/modifier`, data);
+  }
+
+  adminActifMedecin(id: number, actif: boolean): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/medecins/${id}/actif`, { actif });
   }
 
   adminApprouver(id: number): Observable<any> {
@@ -81,6 +132,54 @@ export class ApiService {
     return this.http.get(`${this.apiUrl}/admin/medecins/${medecinId}/justificatifs/${justificatifId}`, {
       responseType: 'blob'
     });
+  }
+
+  // Patients
+  adminPatients(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/patients`, { params: this.params(filtres) });
+  }
+
+  adminPatient(id: number): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/patients/${id}`);
+  }
+
+  adminActifPatient(id: number, actif: boolean): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/patients/${id}/actif`, { actif });
+  }
+
+  // Spécialités
+  adminSpecialites(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/admin/specialites`);
+  }
+
+  adminCreerSpecialite(data: { nom: string; description?: string }): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/specialites`, data);
+  }
+
+  adminModifierSpecialite(id: number, data: { nom: string; description?: string }): Observable<any> {
+    return this.http.put(`${this.apiUrl}/admin/specialites/${id}`, data);
+  }
+
+  adminActifSpecialite(id: number, actif: boolean): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/specialites/${id}/actif`, { actif });
+  }
+
+  // Supervision des rendez-vous
+  adminRendezVous(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/rendez-vous`, { params: this.params(filtres) });
+  }
+
+  adminConflits(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/admin/rendez-vous/conflits`);
+  }
+
+  adminModifierRdv(id: number, data: { statut?: string; date_heure?: string; medecin_id?: number }): Observable<any> {
+    return this.http.patch(`${this.apiUrl}/admin/rendez-vous/${id}`, data);
+  }
+
+  // Journal d'activité
+  adminJournal(page = 1): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/journal`, { params: this.params({ page }) });
   }
 
   // Tous les messages de validation (422) renvoyés par Laravel

@@ -1,105 +1,114 @@
-<div class="register-container">
-  <div class="register-card">
-    <h2>Inscription - Clinique Oré</h2>
+<div class="auth-page">
+  <div class="auth-card large">
+    <a routerLink="/" class="retour">&larr; Retour à l'accueil</a>
+    <div class="logo-zone"><app-logo></app-logo></div>
+    <h1>Créer un compte</h1>
+    <p class="sous">Renseignez vos informations pour accéder à la clinique.</p>
 
-    <div class="type-switch">
-      <button type="button" [class.active]="accountType === 'patient'" (click)="setAccountType('patient')">
-        Je suis patient
-      </button>
-      <button type="button" [class.active]="accountType === 'medecin'" (click)="setAccountType('medecin')">
-        Je suis médecin
-      </button>
+    <div class="type-switch" role="tablist">
+      <button type="button" [class.active]="accountType() === 'patient'" (click)="setAccountType('patient')">Patient</button>
+      <button type="button" [class.active]="accountType() === 'medecin'" (click)="setAccountType('medecin')">Médecin</button>
     </div>
 
-    <div *ngIf="errorMessage" class="alert alert-danger" style="white-space: pre-line">
-      {{ errorMessage }}
-    </div>
-
-    <div *ngIf="successMessage" class="alert alert-success">
-      {{ successMessage }}
-    </div>
+    <div *ngIf="errorMessage()" class="alert-box error">{{ errorMessage() }}</div>
+    <div *ngIf="successMessage()" class="alert-box success">{{ successMessage() }}</div>
 
     <form (ngSubmit)="onRegister()">
-      <div class="form-row">
-        <div class="form-group">
+      <!-- Photo de profil -->
+      <div class="photo-zone">
+        <label class="photo-rond" for="photo">
+          <img *ngIf="photoApercu()" [src]="photoApercu()" alt="Aperçu de votre photo">
+          <span *ngIf="!photoApercu()">
+            <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+            <small>Ajouter une photo</small>
+          </span>
+        </label>
+        <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" (change)="onPhoto($event)" hidden>
+        <div class="hint">Photo de profil obligatoire — JPG, PNG ou WEBP, 2 Mo maximum.</div>
+      </div>
+
+      <div class="deux">
+        <div class="field">
           <label>Prénom</label>
           <input type="text" [(ngModel)]="userData.prenom" name="prenom" required placeholder="Votre prénom">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Nom</label>
           <input type="text" [(ngModel)]="userData.nom" name="nom" required placeholder="Votre nom">
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Adresse Email</label>
-        <input type="email" [(ngModel)]="userData.email" name="email" required placeholder="exemple@domain.com">
+      <div class="field">
+        <label>Adresse email</label>
+        <input type="email" [(ngModel)]="userData.email" name="email" required placeholder="vous@exemple.com">
       </div>
 
-      <div class="form-group">
+      <div class="field">
         <label>Téléphone</label>
-        <input type="text" [(ngModel)]="userData.telephone" name="telephone"
-               [required]="accountType === 'medecin'" placeholder="Numéro de téléphone">
+        <input type="tel" inputmode="numeric" maxlength="9" name="telephone" required
+               [value]="userData.telephone" (input)="onTel($event)" placeholder="771234567">
+        <span class="hint" [class.ok]="telephoneValide()" [class.ko]="userData.telephone.length > 0 && !telephoneValide()">
+          {{ telephoneValide() ? 'Numéro valide' : '9 chiffres, commençant par 77, 78, 76 ou 75' }}
+        </span>
       </div>
 
       <!-- Informations professionnelles : médecin uniquement -->
-      <ng-container *ngIf="accountType === 'medecin'">
+      <ng-container *ngIf="accountType() === 'medecin'">
         <h3 class="section-title">Informations professionnelles</h3>
 
-        <div class="form-group">
+        <div class="field">
           <label>Spécialité</label>
           <select [(ngModel)]="medecin.specialite_id" name="specialite_id" required>
-            <option [ngValue]="null" disabled>Choisissez une spécialité</option>
-            <option *ngFor="let s of specialites" [ngValue]="s.id">{{ s.nom }}</option>
+            <option [ngValue]="null" disabled>Choisissez votre spécialité</option>
+            <option *ngFor="let s of specialites()" [ngValue]="s.id">{{ s.nom }}</option>
           </select>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
+        <div class="deux">
+          <div class="field">
             <label>N° d'inscription à l'Ordre</label>
-            <input type="text" [(ngModel)]="medecin.numero_ordre" name="numero_ordre" required
-                   placeholder="Numéro d'ordre">
+            <input type="text" [(ngModel)]="medecin.numero_ordre" name="numero_ordre" required placeholder="Numéro d'ordre">
           </div>
-          <div class="form-group">
-            <label>Tarif consultation (FCFA)</label>
+          <div class="field">
+            <label>Tarif de consultation (FCFA)</label>
             <input type="number" min="0" [(ngModel)]="medecin.tarif_consultation" name="tarif_consultation"
-                   required placeholder="Ex : 10000">
+                   required placeholder="10000">
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="field">
           <label>Présentation (facultatif)</label>
           <textarea [(ngModel)]="medecin.biographie" name="biographie" rows="3" maxlength="2000"
                     placeholder="Parcours, domaines d'expertise..."></textarea>
         </div>
 
         <h3 class="section-title">Justificatifs</h3>
-        <p class="hint">PDF, JPG ou PNG — 2 Mo maximum par document. Ils seront examinés par l'administrateur.</p>
+        <p class="hint">PDF, JPG ou PNG — 2 Mo maximum par document. L'administrateur les vérifiera avant de valider votre compte.</p>
 
-        <div class="form-group" *ngFor="let j of justificatifs">
-          <label>{{ j.label }}</label>
+        <div class="field" *ngFor="let j of justificatifs">
+          <label>{{ j.label }} <span class="ok-fichier" *ngIf="j.file">&#10003; ajouté</span></label>
           <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFileChange($event, j.key)">
         </div>
       </ng-container>
 
-      <div class="form-group">
-        <label>Mot de passe</label>
-        <input type="password" [(ngModel)]="userData.password" name="password" required
-               placeholder="8 caractères minimum" minlength="8">
+      <div class="deux">
+        <div class="field">
+          <label>Mot de passe</label>
+          <input type="password" [(ngModel)]="userData.password" name="password" required
+                 placeholder="8 caractères minimum" minlength="8" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label>Confirmation</label>
+          <input type="password" [(ngModel)]="userData.password_confirmation" name="password_confirmation"
+                 required placeholder="Répétez le mot de passe" autocomplete="new-password">
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Confirmer le mot de passe</label>
-        <input type="password" [(ngModel)]="userData.password_confirmation" name="password_confirmation" required placeholder="Confirmez votre mot de passe">
-      </div>
-
-      <button type="submit" class="btn-submit" [disabled]="loading">
-        {{ loading ? 'Envoi...' : (accountType === 'medecin' ? 'Envoyer ma demande' : 'Créer mon compte') }}
+      <button type="submit" class="btn btn-block" [disabled]="loading()">
+        {{ loading() ? 'Envoi en cours...' : (accountType() === 'medecin' ? 'Envoyer ma demande' : 'Créer mon compte') }}
       </button>
-
-      <p class="link-login">
-        Déjà un compte ? <a routerLink="/login">Se connecter</a>
-      </p>
     </form>
+
+    <p class="lien-bas">Déjà un compte ? <a routerLink="/login">Se connecter</a></p>
   </div>
 </div>

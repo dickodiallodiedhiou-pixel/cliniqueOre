@@ -1,0 +1,83 @@
+:host { display: block; }
+
+/* ----- Haut de page ----- */
+.hero { background: linear-gradient(135deg, var(--bleu-nuit), var(--bleu) 130%); color: #fff; padding: 48px 20px 110px; }
+.hero-int { max-width: 1160px; margin: 0 auto; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+.hero h1 { color: #fff; font-size: clamp(1.9rem, 4vw, 2.9rem); line-height: 1.15; margin-bottom: 14px; }
+.sous-titre { font-size: 1.1rem; color: #d6e4f7; max-width: 520px; }
+
+.recherche { display: flex; gap: 8px; flex-wrap: wrap; background: #fff; padding: 8px; border-radius: 999px; margin-top: 22px; box-shadow: 0 10px 30px rgba(0, 0, 0, .2); }
+.champ { flex: 1 1 160px; display: flex; align-items: center; gap: 8px; padding: 0 14px; color: var(--gris); min-width: 0; }
+.champ + .champ { border-left: 1px solid var(--bordure); }
+.champ input, .champ select { font: inherit; border: none; outline: none; width: 100%; padding: 10px 0; background: transparent; color: var(--texte); min-width: 0; }
+.bouton-recherche { font: inherit; font-weight: 600; border: none; cursor: pointer; background: var(--accent); color: #fff; padding: 12px 28px; border-radius: 999px; transition: background .15s; }
+.bouton-recherche:hover { background: #c94a08; }
+.mini { margin-top: 14px; font-size: .9rem; color: #b9cfec; }
+
+.hero-photo { height: 380px; box-shadow: 0 20px 50px rgba(0, 0, 0, .3); border-radius: 28px 28px 28px 110px; overflow: hidden; }
+
+/* ----- Cartes d'accès rapide ----- */
+.acces { max-width: 760px; margin: -56px auto 0; padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; }
+.carte-acces { display: flex; gap: 14px; align-items: center; background: #fff; border: 1px solid var(--bordure); border-radius: 16px; padding: 18px; box-shadow: var(--ombre); color: var(--texte); transition: transform .15s, box-shadow .15s; }
+.carte-acces:hover { transform: translateY(-3px); text-decoration: none; box-shadow: 0 10px 28px rgba(16, 24, 40, .12); }
+.carte-acces strong { display: block; color: var(--bleu-nuit); }
+.pastille-ico { flex-shrink: 0; width: 52px; height: 52px; border-radius: 50%; background: var(--bleu-clair); color: var(--bleu); display: flex; align-items: center; justify-content: center; }
+
+/* ----- Sections avec photo ----- */
+.bloc { max-width: 1160px; margin: 72px auto 0; padding: 0 20px; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+.duo-texte h2 { font-size: 1.9rem; }
+.duo-texte p { color: #4b5563; font-size: 1.05rem; margin-bottom: 18px; }
+
+.duo-photo.carre { position: relative; width: 100%; max-width: 440px; aspect-ratio: 1; margin: 0 auto; }
+.fond-decal { position: absolute; inset: 0; transform: translate(-16px, 16px); background: var(--bleu-clair); border-radius: 28px; }
+.cadre-photo { position: absolute; inset: 0; border-radius: 26px; overflow: hidden; box-shadow: var(--ombre); }
+
+.duo-photo.rond { width: 100%; max-width: 400px; aspect-ratio: 1; margin: 0 auto; border-radius: 50%; overflow: hidden; box-shadow: 0 16px 40px rgba(13, 59, 122, .22); border: 8px solid #fff; }
+
+/* Bande claire avec grand arc en arrière-plan */
+.bande { margin-top: 72px; padding: 64px 0; background: var(--bleu-clair); position: relative; overflow: hidden; }
+.bande::after { content: ''; position: absolute; right: -140px; top: -140px; width: 520px; height: 520px; border-radius: 50%; background: rgba(27, 95, 193, .08); }
+.bande .bloc { margin-top: 0; position: relative; z-index: 1; }
+
+/* ----- Étapes ----- */
+.titre-section { text-align: center; font-size: 1.8rem; margin-bottom: 24px; }
+.etapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+.etape { background: #fff; border: 1px solid var(--bordure); border-radius: 16px; padding: 24px; text-align: center; box-shadow: var(--ombre); }
+.num { display: inline-flex; width: 42px; height: 42px; border-radius: 50%; align-items: center; justify-content: center; font-weight: 700; color: #fff; background: var(--bleu); margin-bottom: 10px; }
+
+/* ----- Spécialités ----- */
+.chips-spec { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.spec { background: #fff; border: 1px solid var(--bordure); border-radius: 999px; padding: 9px 20px; color: var(--bleu-fonce); font-weight: 500; transition: all .15s; }
+.spec:hover { background: var(--bleu); border-color: var(--bleu); color: #fff; text-decoration: none; }
+
+/* ----- Médecins ----- */
+.grille-med { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+.vedette { text-align: center; color: inherit; display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0; }
+.vedette:hover { text-decoration: none; box-shadow: 0 10px 28px rgba(16, 24, 40, .12); }
+.vedette h3 { margin: 6px 0 0; }
+
+/* ----- Bandeau médecins ----- */
+.cta { display: grid; grid-template-columns: 1.4fr 1fr; background: linear-gradient(135deg, var(--bleu-nuit), var(--bleu)); border-radius: 24px; overflow: hidden; color: #fff; }
+.cta-texte { padding: 40px; }
+.cta-texte h2 { color: #fff; font-size: 1.7rem; }
+.cta-texte p { color: #d6e4f7; max-width: 520px; margin-bottom: 18px; }
+.btn-blanc { display: inline-block; background: #fff; color: var(--bleu-fonce); font-weight: 600; padding: 10px 24px; border-radius: 999px; }
+.btn-blanc:hover { background: var(--bleu-clair); text-decoration: none; }
+.cta-photo { min-height: 220px; }
+
+/* ----- Mobile ----- */
+@media (max-width: 860px) {
+  .hero { padding-bottom: 90px; }
+  .hero-int { grid-template-columns: 1fr; }
+  .hero-photo { height: 240px; border-radius: 24px; order: -1; }
+  .acces { grid-template-columns: 1fr; margin-top: -44px; }
+  .duo { grid-template-columns: 1fr; gap: 28px; }
+  .duo.inverse .duo-photo { order: -1; }
+  .duo-photo.carre, .duo-photo.rond { max-width: 320px; }
+  .cta { grid-template-columns: 1fr; }
+  .cta-photo { min-height: 160px; order: -1; }
+  .cta-texte { padding: 28px 24px; }
+  .recherche { border-radius: 22px; }
+  .champ + .champ { border-left: none; border-top: 1px solid var(--bordure); }
+}

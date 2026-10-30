@@ -55,6 +55,12 @@ class Medecin extends Model
         return $this->hasMany(RendezVous::class);
     }
 
+    // Plages de disponibilité hebdomadaires (génèrent les créneaux réservables)
+    public function disponibilites()
+    {
+        return $this->hasMany(Disponibilite::class);
+    }
+
     // Pièces justificatives fournies à l'inscription
     public function justificatifs()
     {
@@ -63,12 +69,13 @@ class Medecin extends Model
 
     public function estApprouve(): bool
     {
-        return $this->statut_validation === self::APPROVED;
+        return $this->statut_validation === self::APPROVED && ($this->user->actif ?? true);
     }
 
     // Médecins vérifiés : seuls eux apparaîtront dans l'annuaire
     public function scopeApprouves($query)
     {
-        return $query->where('statut_validation', self::APPROVED);
+        return $query->where('statut_validation', self::APPROVED)
+            ->whereHas('user', fn ($u) => $u->where('actif', true));
     }
 }

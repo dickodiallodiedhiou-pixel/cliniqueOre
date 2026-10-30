@@ -12,10 +12,3 @@ export const roleGuard = (...roles: string[]): CanActivateFn => () => {
   }
   return roles.includes(auth.role ?? '') ? true : router.createUrlTree([auth.homeRoute()]);
 };
-
-// Empêche un utilisateur déjà connecté de revoir login / inscription
-export const guestGuard: CanActivateFn = () => {
-  const auth = inject(AuthService);
-  const router = inject(Router);
-  return auth.isLoggedIn() ? router.createUrlTree([auth.homeRoute()]) : true;
-};

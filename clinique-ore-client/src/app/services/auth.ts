@@ -1,17 +1,26 @@
 import { Injectable } from '@angular/core';
 
+// La session est gardée dans sessionStorage : elle disparaît à la fermeture de l'onglet,
+// donc au prochain lancement on retombe sur la page de connexion.
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly TOKEN_KEY = 'access_token';
   private readonly USER_KEY = 'user';
 
+  constructor() {
+    // Nettoie les anciennes sessions stockées durablement (localStorage)
+    localStorage.removeItem(this.TOKEN_KEY);
+    localStorage.removeItem(this.USER_KEY);
+    localStorage.removeItem('user_role');
+  }
+
   get token(): string | null {
-    return localStorage.getItem(this.TOKEN_KEY);
+    return sessionStorage.getItem(this.TOKEN_KEY);
   }
 
   get user(): any {
     try {
-      return JSON.parse(localStorage.getItem(this.USER_KEY) || 'null');
+      return JSON.parse(sessionStorage.getItem(this.USER_KEY) || 'null');
     } catch {
       return null;
     }
@@ -26,14 +35,18 @@ export class AuthService {
   }
 
   save(response: { access_token: string; user: any }) {
-    localStorage.setItem(this.TOKEN_KEY, response.access_token);
-    localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
+    sessionStorage.setItem(this.TOKEN_KEY, response.access_token);
+    sessionStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
+  }
+
+  // Met à jour l'utilisateur en session (après modification du profil)
+  updateUser(user: any) {
+    sessionStorage.setItem(this.USER_KEY, JSON.stringify(user));
   }
 
   clear() {
-    localStorage.removeItem(this.TOKEN_KEY);
-    localStorage.removeItem(this.USER_KEY);
-    localStorage.removeItem('user_role');
+    sessionStorage.removeItem(this.TOKEN_KEY);
+    sessionStorage.removeItem(this.USER_KEY);
   }
 
   // Page d'accueil selon le rôle

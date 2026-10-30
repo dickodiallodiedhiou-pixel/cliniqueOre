@@ -14,7 +14,13 @@ class Specialite extends Model
     protected $fillable = [
         'nom',
         'description',
+        'actif',
     ];
+
+    protected function casts(): array
+    {
+        return ['actif' => 'boolean'];
+    }
 
     // Une spécialité est exercée par plusieurs médecins
     public function medecins()

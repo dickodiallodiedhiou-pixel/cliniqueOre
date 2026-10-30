@@ -13,15 +13,22 @@ use Illuminate\Support\Facades\Storage;
 
 class AuthController extends Controller
 {
-    public function registerPatient(Request $request)
+    // Règles communes à tous les comptes (patient ou médecin)
+    private function reglesIdentite(): array
     {
-        $data = $request->validate([
+        return [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
-            'telephone' => 'nullable|string|max:30',
-            'date_naissance' => 'nullable|date',
-        ], [
+            // Format Sénégal : 9 chiffres, commence par 75, 76, 77 ou 78
+            'telephone' => ['required', 'regex:/^(75|76|77|78)[0-9]{7}$/'],
+            'photo' => 'required|file|mimes:jpg,jpeg,png,webp|max:2048',
+        ];
+    }
+
+    private function messagesIdentite(): array
+    {
+        return [
             'name.required' => 'Le nom est obligatoire.',
             'email.required' => "L'adresse email est obligatoire.",
             'email.email' => "L'adresse email n'est pas valide.",
@@ -29,26 +36,61 @@ class AuthController extends Controller
             'password.required' => 'Le mot de passe est obligatoire.',
             'password.min' => 'Le mot de passe doit contenir au moins 8 caractères.',
             'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
-            'date_naissance.date' => 'La date de naissance est invalide.',
-        ]);
+            'telephone.required' => 'Le numéro de téléphone est obligatoire.',
+            'telephone.regex' => 'Numéro invalide : 9 chiffres, commençant par 77, 78, 76 ou 75.',
+            'photo.required' => 'La photo de profil est obligatoire.',
+            'photo.mimes' => 'La photo doit être au format JPG, PNG ou WEBP.',
+            'photo.max' => 'La photo dépasse 2 Mo.',
+            'photo.uploaded' => 'Le téléversement de la photo a échoué (fichier trop lourd ?).',
+        ];
+    }
 
-        // Utilisateur + profil patient créés ensemble (tout ou rien)
-        $user = DB::transaction(function () use ($data) {
-            $user = User::create([
-                'name' => $data['name'],
-                'email' => $data['email'],
-                'password' => Hash::make($data['password']),
-                'role' => 'patient', // jamais fourni par le client
-                'telephone' => $data['telephone'] ?? null,
-            ]);
+    // Les espaces / points du numéro sont ignorés : "77 123 45 67" devient "771234567"
+    private function nettoyerTelephone(Request $request): void
+    {
+        if (is_string($request->input('telephone'))) {
+            $request->merge(['telephone' => preg_replace('/\D/', '', $request->input('telephone'))]);
+        }
+    }
 
-            Patient::create([
-                'user_id' => $user->id,
-                'date_naissance' => $data['date_naissance'] ?? null,
-            ]);
+    public function registerPatient(Request $request)
+    {
+        $this->nettoyerTelephone($request);
 
-            return $user;
-        });
+        $data = $request->validate(
+            array_merge($this->reglesIdentite(), ['date_naissance' => 'nullable|date']),
+            array_merge($this->messagesIdentite(), ['date_naissance.date' => 'La date de naissance est invalide.'])
+        );
+
+        $photoPath = null;
+
+        try {
+            $photoPath = $request->file('photo')->store('photos');
+
+            // Utilisateur + profil patient créés ensemble (tout ou rien)
+            $user = DB::transaction(function () use ($data, $photoPath) {
+                $user = User::create([
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'password' => Hash::make($data['password']),
+                    'role' => 'patient', // jamais fourni par le client
+                    'telephone' => $data['telephone'],
+                    'photo' => $photoPath,
+                ]);
+
+                Patient::create([
+                    'user_id' => $user->id,
+                    'date_naissance' => $data['date_naissance'] ?? null,
+                ]);
+
+                return $user;
+            });
+        } catch (\Throwable $e) {
+            if ($photoPath) {
+                Storage::delete($photoPath);
+            }
+            throw $e;
+        }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -65,25 +107,15 @@ class AuthController extends Controller
 
     public function registerMedecin(Request $request)
     {
-        $rules = [
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
-            'telephone' => 'required|string|max:30',
+        $this->nettoyerTelephone($request);
+
+        $rules = array_merge($this->reglesIdentite(), [
             'specialite_id' => 'required|integer|exists:specialites,id',
             'numero_ordre' => 'required|string|max:100|unique:medecins,numero_ordre',
             'tarif_consultation' => 'required|numeric|min:0',
             'biographie' => 'nullable|string|max:2000',
-        ];
-        $messages = [
-            'name.required' => 'Le nom est obligatoire.',
-            'email.required' => "L'adresse email est obligatoire.",
-            'email.email' => "L'adresse email n'est pas valide.",
-            'email.unique' => 'Cette adresse email est déjà utilisée.',
-            'password.required' => 'Le mot de passe est obligatoire.',
-            'password.min' => 'Le mot de passe doit contenir au moins 8 caractères.',
-            'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
-            'telephone.required' => 'Le téléphone est obligatoire.',
+        ]);
+        $messages = array_merge($this->messagesIdentite(), [
             'specialite_id.required' => 'Veuillez choisir une spécialité.',
             'specialite_id.exists' => 'Cette spécialité est invalide.',
             'numero_ordre.required' => "Le numéro d'inscription à l'Ordre est obligatoire.",
@@ -91,7 +123,7 @@ class AuthController extends Controller
             'tarif_consultation.required' => 'Le tarif de consultation est obligatoire.',
             'tarif_consultation.numeric' => 'Le tarif de consultation doit être un nombre.',
             'tarif_consultation.min' => 'Le tarif de consultation doit être positif.',
-        ];
+        ]);
 
         $libelles = [
             'diplome' => 'le diplôme',
@@ -112,13 +144,17 @@ class AuthController extends Controller
         $storedPaths = [];
 
         try {
-            $user = DB::transaction(function () use ($request, $data, &$storedPaths) {
+            $photoPath = $request->file('photo')->store('photos');
+            $storedPaths[] = $photoPath;
+
+            $user = DB::transaction(function () use ($request, $data, $photoPath, &$storedPaths) {
                 $user = User::create([
                     'name' => $data['name'],
                     'email' => $data['email'],
                     'password' => Hash::make($data['password']),
                     'role' => 'medecin', // jamais fourni par le client
                     'telephone' => $data['telephone'],
+                    'photo' => $photoPath,
                 ]);
 
                 // Le compte démarre toujours en attente de validation par l'administrateur
@@ -178,6 +214,12 @@ class AuthController extends Controller
 
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
             return response()->json(['message' => 'Email ou mot de passe incorrect.'], 401);
+        }
+
+        if (!$user->actif) {
+            return response()->json([
+                'message' => "Ce compte a été désactivé. Contactez l'administrateur de la clinique.",
+            ], 403);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;

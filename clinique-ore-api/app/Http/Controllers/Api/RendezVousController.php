@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Medecin;
 use App\Models\RendezVous;
+use App\Services\CreneauService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -16,8 +18,8 @@ class RendezVousController extends Controller
         $user = $request->user();
 
         $query = RendezVous::with([
-            'patient.user:id,name,telephone',
-            'medecin.user:id,name',
+            'patient.user:id,name,telephone,photo',
+            'medecin.user:id,name,photo',
             'medecin.specialite:id,nom',
         ])->orderByDesc('date_heure');
 
@@ -53,20 +55,23 @@ class RendezVousController extends Controller
     }
 
     // Réservé aux patients (route protégée par role:patient)
-    public function store(Request $request)
+    public function store(Request $request, CreneauService $creneaux)
     {
         $data = $request->validate([
             'medecin_id' => [
                 'required',
-                // Un rendez-vous ne peut être pris qu'avec un médecin vérifié
-                Rule::exists('medecins', 'id')->where('statut_validation', Medecin::APPROVED),
+                // Un rendez-vous ne peut être pris qu'avec un médecin vérifié dont le compte est actif
+                function ($attribute, $value, $fail) {
+                    if (!Medecin::approuves()->whereKey($value)->exists()) {
+                        $fail("Ce médecin n'est pas disponible.");
+                    }
+                },
             ],
             'date_heure' => 'required|date|after:now',
             'motif' => 'nullable|string|max:1000',
         ], [
             'medecin_id.required' => 'Veuillez choisir un médecin.',
-            'medecin_id.exists' => "Ce médecin n'est pas disponible.",
-            'date_heure.required' => 'La date et l\'heure sont obligatoires.',
+                        'date_heure.required' => 'La date et l\'heure sont obligatoires.',
             'date_heure.date' => 'La date et l\'heure sont invalides.',
             'date_heure.after' => 'Le rendez-vous doit être fixé dans le futur.',
         ]);
@@ -77,19 +82,18 @@ class RendezVousController extends Controller
             return response()->json(['message' => 'Profil patient non trouvé'], 404);
         }
 
-        $dejaPris = RendezVous::where('medecin_id', $data['medecin_id'])
-            ->where('date_heure', $data['date_heure'])
-            ->where('statut', '!=', 'annule')
-            ->exists();
+        // Le créneau doit être proposé par le médecin et encore libre
+        $medecin = Medecin::approuves()->findOrFail($data['medecin_id']);
+        $dateHeure = Carbon::parse($data['date_heure']);
 
-        if ($dejaPris) {
-            return response()->json(['message' => "Ce créneau n'est plus disponible pour ce médecin."], 422);
+        if (!$creneaux->estLibre($medecin, $dateHeure)) {
+            return response()->json(['message' => "Ce créneau n'est pas ou plus disponible. Choisissez un autre horaire."], 422);
         }
 
         $rdv = RendezVous::create([
             'patient_id' => $patient->id,
             'medecin_id' => $data['medecin_id'],
-            'date_heure' => $data['date_heure'],
+            'date_heure' => $dateHeure->format('Y-m-d H:i:00'),
             'motif' => $data['motif'] ?? null,
             'statut' => 'en_attente',
         ]);
@@ -98,6 +102,47 @@ class RendezVousController extends Controller
             'message' => 'Rendez-vous réservé avec succès',
             'rendez_vous' => $rdv,
         ], 201);
+    }
+
+    // Le patient reprogramme son rendez-vous sur un autre créneau libre (il repasse en attente de confirmation)
+    public function modifier(Request $request, RendezVous $rendezVous, CreneauService $creneaux)
+    {
+        $patient = $request->user()->patient;
+
+        if (!$patient || $rendezVous->patient_id !== $patient->id) {
+            return response()->json(['message' => 'Accès refusé.'], 403);
+        }
+
+        if (!in_array($rendezVous->statut, ['en_attente', 'confirme'], true)) {
+            return response()->json(['message' => 'Ce rendez-vous ne peut plus être modifié.'], 422);
+        }
+
+        $data = $request->validate([
+            'date_heure' => 'required|date|after:now',
+            'motif' => 'nullable|string|max:1000',
+        ], [
+            'date_heure.required' => 'La date et l\'heure sont obligatoires.',
+            'date_heure.date' => 'La date et l\'heure sont invalides.',
+            'date_heure.after' => 'Le rendez-vous doit être fixé dans le futur.',
+        ]);
+
+        $dateHeure = Carbon::parse($data['date_heure']);
+
+        if (!$rendezVous->medecin->estApprouve()) {
+            return response()->json(['message' => "Ce médecin n'est plus disponible."], 422);
+        }
+
+        if (!$creneaux->estLibre($rendezVous->medecin, $dateHeure)) {
+            return response()->json(['message' => "Ce créneau n'est pas ou plus disponible. Choisissez un autre horaire."], 422);
+        }
+
+        $rendezVous->update([
+            'date_heure' => $dateHeure->format('Y-m-d H:i:00'),
+            'motif' => array_key_exists('motif', $data) ? $data['motif'] : $rendezVous->motif,
+            'statut' => 'en_attente', // le médecin doit confirmer le nouvel horaire
+        ]);
+
+        return response()->json(['message' => 'Rendez-vous modifié.', 'rendez_vous' => $rendezVous]);
     }
 
     // Le patient annule son propre rendez-vous

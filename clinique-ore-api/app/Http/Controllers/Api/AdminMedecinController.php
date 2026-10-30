@@ -3,32 +3,184 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activite;
 use App\Models\Justificatif;
 use App\Models\Medecin;
+use App\Models\Specialite;
+use App\Models\User;
+use App\Services\CompteService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class AdminMedecinController extends Controller
 {
-    // Liste des demandes, filtrable : ?statut=pending|approved|rejected (pending par défaut)
+    private const RELATIONS = ['user:id,name,email,telephone,photo,actif', 'specialite:id,nom', 'justificatifs'];
+
+    // Liste paginée et filtrable : ?statut= &specialite_id= &actif= &q= &page= &per_page=
     public function index(Request $request)
     {
-        $statut = $request->query('statut', Medecin::PENDING);
-        abort_unless(in_array($statut, [Medecin::PENDING, Medecin::APPROVED, Medecin::REJECTED], true), 422, 'Statut invalide.');
+        $statut = $request->query('statut');
+        abort_unless(
+            !$statut || in_array($statut, [Medecin::PENDING, Medecin::APPROVED, Medecin::REJECTED], true),
+            422,
+            'Statut invalide.'
+        );
 
-        $medecins = Medecin::with(['user:id,name,email,telephone', 'specialite:id,nom', 'justificatifs'])
-            ->where('statut_validation', $statut)
-            ->orderBy('created_at')
-            ->get();
+        $query = Medecin::with(self::RELATIONS)->withCount('rendezVous');
 
-        return response()->json($medecins);
+        if ($statut) {
+            $query->where('statut_validation', $statut);
+        }
+        if ($request->filled('specialite_id')) {
+            $query->where('specialite_id', $request->integer('specialite_id'));
+        }
+        if ($request->filled('actif')) {
+            $actif = filter_var($request->query('actif'), FILTER_VALIDATE_BOOLEAN);
+            $query->whereHas('user', fn ($u) => $u->where('actif', $actif));
+        }
+        if ($request->filled('q')) {
+            $mot = '%' . mb_strtolower(trim($request->query('q'))) . '%';
+            $query->where(function ($w) use ($mot) {
+                $w->whereRaw('LOWER(numero_ordre) LIKE ?', [$mot])
+                    ->orWhereHas('user', fn ($u) => $u->whereRaw('LOWER(name) LIKE ?', [$mot])
+                        ->orWhereRaw('LOWER(email) LIKE ?', [$mot]));
+            });
+        }
+
+        $parPage = min(100, max(1, (int) $request->query('per_page', 15)));
+
+        return response()->json($query->orderByDesc('created_at')->orderByDesc('id')->paginate($parPage));
     }
 
     public function show(Medecin $medecin)
     {
-        return response()->json(
-            $medecin->load(['user:id,name,email,telephone', 'specialite:id,nom', 'justificatifs'])
-        );
+        return response()->json($medecin->load(self::RELATIONS)->loadCount('rendezVous'));
+    }
+
+    // Ajout direct d'un médecin par l'administrateur : le compte est créé déjà approuvé
+    public function store(Request $request)
+    {
+        $this->nettoyerTelephone($request);
+        $data = $request->validate($this->regles(null), $this->messages());
+
+        $photo = null;
+
+        try {
+            $photo = $request->hasFile('photo') ? $request->file('photo')->store('photos') : null;
+
+            $medecin = DB::transaction(function () use ($data, $photo, $request) {
+                $user = User::create([
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'password' => Hash::make($data['password']),
+                    'role' => 'medecin',
+                    'telephone' => $data['telephone'],
+                    'photo' => $photo,
+                    'actif' => true,
+                ]);
+
+                return Medecin::create([
+                    'user_id' => $user->id,
+                    'specialite_id' => $data['specialite_id'],
+                    'numero_ordre' => $data['numero_ordre'],
+                    'tarif_consultation' => $data['tarif_consultation'],
+                    'biographie' => $data['biographie'] ?? null,
+                    'statut_validation' => Medecin::APPROVED,
+                    'valide_le' => now(),
+                    'valide_par' => $request->user()->id,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            if ($photo) {
+                Storage::delete($photo);
+            }
+            throw $e;
+        }
+
+        Activite::enregistrer($request->user(), 'medecin_cree', 'medecin', $medecin->id, ['nom' => $data['name']]);
+
+        return response()->json([
+            'message' => 'Médecin ajouté. Son compte est actif et visible dans l\'annuaire.',
+            'medecin' => $medecin->load(self::RELATIONS)->loadCount('rendezVous'),
+        ], 201);
+    }
+
+    // Modification des informations d'un médecin (POST car la requête peut contenir une photo)
+    public function update(Request $request, Medecin $medecin)
+    {
+        $this->nettoyerTelephone($request);
+        $data = $request->validate($this->regles($medecin), $this->messages());
+
+        $user = $medecin->user;
+        $anciennePhoto = $user->getRawOriginal('photo');
+        $nouvellePhoto = null;
+
+        try {
+            $nouvellePhoto = $request->hasFile('photo') ? $request->file('photo')->store('photos') : null;
+
+            DB::transaction(function () use ($data, $user, $medecin, $nouvellePhoto, $anciennePhoto) {
+                $champsUser = [
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'telephone' => $data['telephone'],
+                    'photo' => $nouvellePhoto ?? $anciennePhoto,
+                ];
+                if (!empty($data['password'])) {
+                    $champsUser['password'] = Hash::make($data['password']);
+                }
+                $user->update($champsUser);
+
+                $medecin->update([
+                    'specialite_id' => $data['specialite_id'],
+                    'numero_ordre' => $data['numero_ordre'],
+                    'tarif_consultation' => $data['tarif_consultation'],
+                    'biographie' => $data['biographie'] ?? null,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            if ($nouvellePhoto) {
+                Storage::delete($nouvellePhoto);
+            }
+            throw $e;
+        }
+
+        if ($nouvellePhoto && $anciennePhoto) {
+            Storage::delete($anciennePhoto);
+        }
+        if (!empty($data['password'])) {
+            $user->tokens()->delete(); // le nouveau mot de passe coupe les sessions ouvertes
+        }
+
+        Activite::enregistrer($request->user(), 'medecin_modifie', 'medecin', $medecin->id, [
+            'nom' => $data['name'],
+            'mot_de_passe_reinitialise' => !empty($data['password']),
+        ]);
+
+        return response()->json([
+            'message' => 'Informations du médecin mises à jour.',
+            'medecin' => $medecin->fresh()->load(self::RELATIONS)->loadCount('rendezVous'),
+        ]);
+    }
+
+    // Activer / désactiver le compte
+    public function basculerActif(Request $request, Medecin $medecin, CompteService $comptes)
+    {
+        $data = $request->validate(['actif' => 'required|boolean']);
+        $actif = (bool) $data['actif'];
+
+        $comptes->changerActivite($medecin->user, $actif);
+
+        Activite::enregistrer($request->user(), $actif ? 'compte_active' : 'compte_desactive', 'medecin', $medecin->id, [
+            'nom' => $medecin->user->name,
+        ]);
+
+        return response()->json([
+            'message' => $actif ? 'Compte activé.' : 'Compte désactivé : le médecin ne peut plus se connecter.',
+            'medecin' => $medecin->fresh()->load(self::RELATIONS)->loadCount('rendezVous'),
+        ]);
     }
 
     // Téléchargement d'un justificatif (stocké sur le disque privé)
@@ -51,9 +203,11 @@ class AdminMedecinController extends Controller
             'valide_par' => $request->user()->id,
         ]);
 
+        Activite::enregistrer($request->user(), 'medecin_approuve', 'medecin', $medecin->id, ['nom' => $medecin->user->name]);
+
         return response()->json([
             'message' => 'Compte médecin approuvé. Il apparaît désormais dans l\'annuaire.',
-            'medecin' => $medecin->fresh()->load(['user:id,name,email,telephone', 'specialite:id,nom', 'justificatifs']),
+            'medecin' => $medecin->fresh()->load(self::RELATIONS),
         ]);
     }
 
@@ -73,9 +227,76 @@ class AdminMedecinController extends Controller
             'valide_par' => $request->user()->id,
         ]);
 
+        Activite::enregistrer($request->user(), 'medecin_refuse', 'medecin', $medecin->id, [
+            'nom' => $medecin->user->name,
+            'motif' => $data['motif'],
+        ]);
+
         return response()->json([
             'message' => 'Compte médecin refusé.',
-            'medecin' => $medecin->fresh()->load(['user:id,name,email,telephone', 'specialite:id,nom', 'justificatifs']),
+            'medecin' => $medecin->fresh()->load(self::RELATIONS),
         ]);
+    }
+
+    private function nettoyerTelephone(Request $request): void
+    {
+        if (is_string($request->input('telephone'))) {
+            $request->merge(['telephone' => preg_replace('/\D/', '', $request->input('telephone'))]);
+        }
+    }
+
+    private function regles(?Medecin $medecin): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($medecin?->user_id)],
+            'telephone' => ['required', 'regex:/^(75|76|77|78)[0-9]{7}$/'],
+            // création : obligatoire ; modification : facultatif (réinitialisation par l'admin)
+            'password' => $medecin ? 'nullable|string|min:8' : 'required|string|min:8',
+            'specialite_id' => [
+                'required',
+                'integer',
+                // spécialité active (ou celle déjà associée au médecin en cas de modification)
+                function ($attribute, $value, $fail) use ($medecin) {
+                    $valide = Specialite::whereKey($value)->where(function ($q) use ($medecin) {
+                        $q->where('actif', true);
+                        if ($medecin) {
+                            $q->orWhere('id', $medecin->specialite_id);
+                        }
+                    })->exists();
+
+                    if (!$valide) {
+                        $fail('Cette spécialité est invalide ou désactivée.');
+                    }
+                },
+            ],
+            'numero_ordre' => ['required', 'string', 'max:100', Rule::unique('medecins', 'numero_ordre')->ignore($medecin?->id)],
+            'tarif_consultation' => 'required|numeric|min:0',
+            'biographie' => 'nullable|string|max:2000',
+            'photo' => 'nullable|file|mimes:jpg,jpeg,png,webp|max:2048',
+        ];
+    }
+
+    private function messages(): array
+    {
+        return [
+            'name.required' => 'Le nom est obligatoire.',
+            'email.required' => "L'adresse email est obligatoire.",
+            'email.email' => "L'adresse email n'est pas valide.",
+            'email.unique' => 'Cette adresse email est déjà utilisée.',
+            'telephone.required' => 'Le numéro de téléphone est obligatoire.',
+            'telephone.regex' => 'Numéro invalide : 9 chiffres, commençant par 77, 78, 76 ou 75.',
+            'password.required' => 'Le mot de passe est obligatoire.',
+            'password.min' => 'Le mot de passe doit contenir au moins 8 caractères.',
+            'specialite_id.required' => 'Veuillez choisir une spécialité.',
+            'numero_ordre.required' => "Le numéro d'inscription à l'Ordre est obligatoire.",
+            'numero_ordre.unique' => "Ce numéro d'inscription est déjà enregistré.",
+            'tarif_consultation.required' => 'Le tarif de consultation est obligatoire.',
+            'tarif_consultation.numeric' => 'Le tarif de consultation doit être un nombre.',
+            'tarif_consultation.min' => 'Le tarif de consultation doit être positif.',
+            'photo.mimes' => 'La photo doit être au format JPG, PNG ou WEBP.',
+            'photo.max' => 'La photo dépasse 2 Mo.',
+            'photo.uploaded' => 'Le téléversement de la photo a échoué (fichier trop lourd ?).',
+        ];
     }
 }
