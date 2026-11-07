@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\NormaliseLaRequete;
 use App\Models\Medecin;
 use App\Models\Patient;
 use App\Models\User;
@@ -10,14 +11,19 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
+    use NormaliseLaRequete;
+
     // Règles communes à tous les comptes (patient ou médecin)
     private function reglesIdentite(): array
     {
         return [
-            'name' => 'required|string|max:255',
+            'prenom' => 'required|string|max:100',
+            'nom' => 'required|string|max:100',
+            'adresse' => 'nullable|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
             // Format Sénégal : 9 chiffres, commence par 75, 76, 77 ou 78
@@ -29,7 +35,8 @@ class AuthController extends Controller
     private function messagesIdentite(): array
     {
         return [
-            'name.required' => 'Le nom est obligatoire.',
+            'prenom.required' => 'Le prénom est obligatoire.',
+            'nom.required' => 'Le nom est obligatoire.',
             'email.required' => "L'adresse email est obligatoire.",
             'email.email' => "L'adresse email n'est pas valide.",
             'email.unique' => 'Cette adresse email est déjà utilisée.',
@@ -56,10 +63,14 @@ class AuthController extends Controller
     public function registerPatient(Request $request)
     {
         $this->nettoyerTelephone($request);
+        $this->normaliserIdentite($request);
 
         $data = $request->validate(
-            array_merge($this->reglesIdentite(), ['date_naissance' => 'nullable|date']),
-            array_merge($this->messagesIdentite(), ['date_naissance.date' => 'La date de naissance est invalide.'])
+            array_merge($this->reglesIdentite(), ['date_naissance' => 'nullable|date', 'sexe' => 'nullable|in:M,F']),
+            array_merge($this->messagesIdentite(), [
+                'date_naissance.date' => 'La date de naissance est invalide.',
+                'sexe.in' => 'Le sexe doit être M (masculin) ou F (féminin).',
+            ])
         );
 
         $photoPath = null;
@@ -70,7 +81,9 @@ class AuthController extends Controller
             // Utilisateur + profil patient créés ensemble (tout ou rien)
             $user = DB::transaction(function () use ($data, $photoPath) {
                 $user = User::create([
-                    'name' => $data['name'],
+                    'prenom' => $data['prenom'],
+                    'nom' => $data['nom'],
+                    'adresse' => $data['adresse'] ?? null,
                     'email' => $data['email'],
                     'password' => Hash::make($data['password']),
                     'role' => 'patient', // jamais fourni par le client
@@ -81,6 +94,7 @@ class AuthController extends Controller
                 Patient::create([
                     'user_id' => $user->id,
                     'date_naissance' => $data['date_naissance'] ?? null,
+                    'sexe' => $data['sexe'] ?? null,
                 ]);
 
                 return $user;
@@ -107,17 +121,22 @@ class AuthController extends Controller
 
     public function registerMedecin(Request $request)
     {
+        $this->normaliserIdentite($request);
+        $this->normaliserSpecialites($request);
         $this->nettoyerTelephone($request);
 
         $rules = array_merge($this->reglesIdentite(), [
-            'specialite_id' => 'required|integer|exists:specialites,id',
+            // un médecin a une ou plusieurs spécialités (parmi celles proposées par la clinique)
+            'specialite_ids' => 'required|array|min:1',
+            'specialite_ids.*' => [Rule::exists('specialites', 'id')->where('actif', true)],
             'numero_ordre' => 'required|string|max:100|unique:medecins,numero_ordre',
             'tarif_consultation' => 'required|numeric|min:0',
             'biographie' => 'nullable|string|max:2000',
         ]);
         $messages = array_merge($this->messagesIdentite(), [
-            'specialite_id.required' => 'Veuillez choisir une spécialité.',
-            'specialite_id.exists' => 'Cette spécialité est invalide.',
+            'specialite_ids.required' => 'Veuillez choisir au moins une spécialité.',
+            'specialite_ids.min' => 'Veuillez choisir au moins une spécialité.',
+            'specialite_ids.*.exists' => 'Une des spécialités choisies est invalide.',
             'numero_ordre.required' => "Le numéro d'inscription à l'Ordre est obligatoire.",
             'numero_ordre.unique' => "Ce numéro d'inscription est déjà enregistré.",
             'tarif_consultation.required' => 'Le tarif de consultation est obligatoire.',
@@ -149,7 +168,9 @@ class AuthController extends Controller
 
             $user = DB::transaction(function () use ($request, $data, $photoPath, &$storedPaths) {
                 $user = User::create([
-                    'name' => $data['name'],
+                    'prenom' => $data['prenom'],
+                    'nom' => $data['nom'],
+                    'adresse' => $data['adresse'] ?? null,
                     'email' => $data['email'],
                     'password' => Hash::make($data['password']),
                     'role' => 'medecin', // jamais fourni par le client
@@ -160,12 +181,13 @@ class AuthController extends Controller
                 // Le compte démarre toujours en attente de validation par l'administrateur
                 $medecin = Medecin::create([
                     'user_id' => $user->id,
-                    'specialite_id' => $data['specialite_id'],
+                    'specialite_id' => $data['specialite_ids'][0], // spécialité principale
                     'numero_ordre' => $data['numero_ordre'],
                     'tarif_consultation' => $data['tarif_consultation'],
                     'biographie' => $data['biographie'] ?? null,
                     'statut_validation' => Medecin::PENDING,
                 ]);
+                $medecin->definirSpecialites($data['specialite_ids']);
 
                 foreach (self::JUSTIFICATIFS as $type) {
                     $fichier = $request->file($type);
@@ -241,7 +263,9 @@ class AuthController extends Controller
     private function withProfile(User $user): User
     {
         if ($user->role === 'medecin') {
-            $user->load('medecin.specialite');
+            $user->load(['medecin.specialite', 'medecin.specialites']);
+        } elseif ($user->role === 'patient') {
+            $user->load('patient:id,user_id,date_naissance,sexe');
         }
 
         return $user;

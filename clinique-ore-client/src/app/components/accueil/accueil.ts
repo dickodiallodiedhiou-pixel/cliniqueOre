@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../services/api';
+import { nomsSpecialites } from '../../services/ui';
 import { AvatarComponent } from '../avatar/avatar';
 import { PhotoComponent } from '../photo/photo';
 import { SiteFooterComponent } from '../site-footer/site-footer';
@@ -23,7 +24,7 @@ export class AccueilComponent implements OnInit {
   medecins = signal<any[]>([]);
   specialites = signal<{ id: number; nom: string }[]>([]);
 
-  nbSpecialites = computed(() => new Set(this.medecins().map((m) => m.specialite)).size);
+  nbSpecialites = computed(() => new Set(this.medecins().flatMap((m) => nomsSpecialites(m))).size);
   vedettes = computed(() => this.medecins().slice(0, 3));
 
   q = '';

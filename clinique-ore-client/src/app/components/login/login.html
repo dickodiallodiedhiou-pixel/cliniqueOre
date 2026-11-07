@@ -26,6 +26,7 @@
         <label for="password">Mot de passe</label>
         <input type="password" id="password" [(ngModel)]="credentials.password" name="password" required
                placeholder="Votre mot de passe" autocomplete="current-password">
+        <a routerLink="/mot-de-passe-oublie" class="oubli">Mot de passe oublié ?</a>
       </div>
 
       <button type="submit" class="btn btn-block" [disabled]="loading()">

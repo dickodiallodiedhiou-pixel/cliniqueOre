@@ -11,8 +11,8 @@ use Illuminate\Http\Request;
 class AdminPatientController extends Controller
 {
     // Colonnes retournées : pas de données médicales (groupe sanguin, antécédents) pour l'administrateur
-    private const COLONNES = ['id', 'user_id', 'date_naissance', 'created_at'];
-    private const USER = 'user:id,name,email,telephone,photo,actif,created_at';
+    private const COLONNES = ['id', 'user_id', 'date_naissance', 'sexe', 'created_at'];
+    private const USER = 'user:id,name,nom,prenom,email,telephone,adresse,photo,actif,created_at';
 
     // Liste paginée : ?q= (nom, email, téléphone) &actif= &page= &per_page=
     public function index(Request $request)

@@ -14,7 +14,13 @@ class Disponibilite extends Model
         'heure_debut',
         'heure_fin',
         'duree',
+        'actif',
     ];
+
+    protected function casts(): array
+    {
+        return ['actif' => 'boolean'];
+    }
 
     public function medecin()
     {

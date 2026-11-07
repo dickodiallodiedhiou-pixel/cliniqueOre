@@ -52,16 +52,32 @@
         </span>
       </div>
 
+      <div class="field">
+        <label>Adresse (facultatif)</label>
+        <input type="text" [(ngModel)]="userData.adresse" name="adresse" maxlength="255" placeholder="Quartier, ville">
+      </div>
+
+      <div class="field" *ngIf="accountType() === 'patient'">
+        <label>Sexe (facultatif)</label>
+        <select [(ngModel)]="userData.sexe" name="sexe">
+          <option value="">Non précisé</option>
+          <option value="M">Masculin</option>
+          <option value="F">Féminin</option>
+        </select>
+      </div>
+
       <!-- Informations professionnelles : médecin uniquement -->
       <ng-container *ngIf="accountType() === 'medecin'">
         <h3 class="section-title">Informations professionnelles</h3>
 
         <div class="field">
-          <label>Spécialité</label>
-          <select [(ngModel)]="medecin.specialite_id" name="specialite_id" required>
-            <option [ngValue]="null" disabled>Choisissez votre spécialité</option>
-            <option *ngFor="let s of specialites()" [ngValue]="s.id">{{ s.nom }}</option>
-          </select>
+          <label>Spécialités (une ou plusieurs)</label>
+          <div class="cases">
+            <label class="case-spec" *ngFor="let s of specialites()">
+              <input type="checkbox" [checked]="estChoisie(s.id)" (change)="basculerSpecialite(s.id)"> {{ s.nom }}
+            </label>
+          </div>
+          <span class="hint">La première spécialité cochée est votre spécialité principale.</span>
         </div>
 
         <div class="deux">

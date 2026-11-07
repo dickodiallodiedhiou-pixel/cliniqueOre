@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\NormaliseLaRequete;
 use App\Models\Activite;
 use App\Models\Justificatif;
 use App\Models\Medecin;
@@ -17,7 +18,9 @@ use Illuminate\Validation\Rule;
 
 class AdminMedecinController extends Controller
 {
-    private const RELATIONS = ['user:id,name,email,telephone,photo,actif', 'specialite:id,nom', 'justificatifs'];
+    use NormaliseLaRequete;
+
+    private const RELATIONS = ['user:id,name,nom,prenom,email,telephone,adresse,photo,actif', 'specialite:id,nom', 'specialites:id,nom', 'justificatifs'];
 
     // Liste paginée et filtrable : ?statut= &specialite_id= &actif= &q= &page= &per_page=
     public function index(Request $request)
@@ -35,7 +38,8 @@ class AdminMedecinController extends Controller
             $query->where('statut_validation', $statut);
         }
         if ($request->filled('specialite_id')) {
-            $query->where('specialite_id', $request->integer('specialite_id'));
+            $id = $request->integer('specialite_id');
+            $query->whereHas('specialites', fn ($sp) => $sp->where('specialites.id', $id));
         }
         if ($request->filled('actif')) {
             $actif = filter_var($request->query('actif'), FILTER_VALIDATE_BOOLEAN);
@@ -64,6 +68,8 @@ class AdminMedecinController extends Controller
     public function store(Request $request)
     {
         $this->nettoyerTelephone($request);
+        $this->normaliserIdentite($request);
+        $this->normaliserSpecialites($request);
         $data = $request->validate($this->regles(null), $this->messages());
 
         $photo = null;
@@ -73,7 +79,9 @@ class AdminMedecinController extends Controller
 
             $medecin = DB::transaction(function () use ($data, $photo, $request) {
                 $user = User::create([
-                    'name' => $data['name'],
+                    'prenom' => $data['prenom'],
+                    'nom' => $data['nom'],
+                    'adresse' => $data['adresse'] ?? null,
                     'email' => $data['email'],
                     'password' => Hash::make($data['password']),
                     'role' => 'medecin',
@@ -82,9 +90,9 @@ class AdminMedecinController extends Controller
                     'actif' => true,
                 ]);
 
-                return Medecin::create([
+                $medecin = Medecin::create([
                     'user_id' => $user->id,
-                    'specialite_id' => $data['specialite_id'],
+                    'specialite_id' => $data['specialite_ids'][0], // spécialité principale
                     'numero_ordre' => $data['numero_ordre'],
                     'tarif_consultation' => $data['tarif_consultation'],
                     'biographie' => $data['biographie'] ?? null,
@@ -92,6 +100,9 @@ class AdminMedecinController extends Controller
                     'valide_le' => now(),
                     'valide_par' => $request->user()->id,
                 ]);
+                $medecin->definirSpecialites($data['specialite_ids']);
+
+                return $medecin;
             });
         } catch (\Throwable $e) {
             if ($photo) {
@@ -100,7 +111,7 @@ class AdminMedecinController extends Controller
             throw $e;
         }
 
-        Activite::enregistrer($request->user(), 'medecin_cree', 'medecin', $medecin->id, ['nom' => $data['name']]);
+        Activite::enregistrer($request->user(), 'medecin_cree', 'medecin', $medecin->id, ['nom' => trim($data['prenom'] . ' ' . $data['nom'])]);
 
         return response()->json([
             'message' => 'Médecin ajouté. Son compte est actif et visible dans l\'annuaire.',
@@ -112,6 +123,8 @@ class AdminMedecinController extends Controller
     public function update(Request $request, Medecin $medecin)
     {
         $this->nettoyerTelephone($request);
+        $this->normaliserIdentite($request);
+        $this->normaliserSpecialites($request);
         $data = $request->validate($this->regles($medecin), $this->messages());
 
         $user = $medecin->user;
@@ -123,7 +136,9 @@ class AdminMedecinController extends Controller
 
             DB::transaction(function () use ($data, $user, $medecin, $nouvellePhoto, $anciennePhoto) {
                 $champsUser = [
-                    'name' => $data['name'],
+                    'prenom' => $data['prenom'],
+                    'nom' => $data['nom'],
+                    'adresse' => $data['adresse'] ?? null,
                     'email' => $data['email'],
                     'telephone' => $data['telephone'],
                     'photo' => $nouvellePhoto ?? $anciennePhoto,
@@ -134,11 +149,11 @@ class AdminMedecinController extends Controller
                 $user->update($champsUser);
 
                 $medecin->update([
-                    'specialite_id' => $data['specialite_id'],
                     'numero_ordre' => $data['numero_ordre'],
                     'tarif_consultation' => $data['tarif_consultation'],
                     'biographie' => $data['biographie'] ?? null,
                 ]);
+                $medecin->definirSpecialites($data['specialite_ids']);
             });
         } catch (\Throwable $e) {
             if ($nouvellePhoto) {
@@ -155,7 +170,7 @@ class AdminMedecinController extends Controller
         }
 
         Activite::enregistrer($request->user(), 'medecin_modifie', 'medecin', $medecin->id, [
-            'nom' => $data['name'],
+            'nom' => trim($data['prenom'] . ' ' . $data['nom']),
             'mot_de_passe_reinitialise' => !empty($data['password']),
         ]);
 
@@ -247,26 +262,30 @@ class AdminMedecinController extends Controller
 
     private function regles(?Medecin $medecin): array
     {
+        $dejaAssociees = $medecin ? $medecin->specialites()->pluck('specialites.id')->all() : [];
+
         return [
-            'name' => 'required|string|max:255',
+            'prenom' => 'required|string|max:100',
+            'nom' => 'required|string|max:100',
+            'adresse' => 'nullable|string|max:255',
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($medecin?->user_id)],
             'telephone' => ['required', 'regex:/^(75|76|77|78)[0-9]{7}$/'],
             // création : obligatoire ; modification : facultatif (réinitialisation par l'admin)
             'password' => $medecin ? 'nullable|string|min:8' : 'required|string|min:8',
-            'specialite_id' => [
-                'required',
+            // une ou plusieurs spécialités : actives (ou déjà associées au médecin en cas de modification)
+            'specialite_ids' => 'required|array|min:1',
+            'specialite_ids.*' => [
                 'integer',
-                // spécialité active (ou celle déjà associée au médecin en cas de modification)
-                function ($attribute, $value, $fail) use ($medecin) {
-                    $valide = Specialite::whereKey($value)->where(function ($q) use ($medecin) {
+                function ($attribute, $value, $fail) use ($dejaAssociees) {
+                    $valide = Specialite::whereKey($value)->where(function ($q) use ($dejaAssociees) {
                         $q->where('actif', true);
-                        if ($medecin) {
-                            $q->orWhere('id', $medecin->specialite_id);
+                        if ($dejaAssociees) {
+                            $q->orWhereIn('id', $dejaAssociees);
                         }
                     })->exists();
 
                     if (!$valide) {
-                        $fail('Cette spécialité est invalide ou désactivée.');
+                        $fail('Une des spécialités choisies est invalide ou désactivée.');
                     }
                 },
             ],
@@ -280,7 +299,8 @@ class AdminMedecinController extends Controller
     private function messages(): array
     {
         return [
-            'name.required' => 'Le nom est obligatoire.',
+            'prenom.required' => 'Le prénom est obligatoire.',
+            'nom.required' => 'Le nom est obligatoire.',
             'email.required' => "L'adresse email est obligatoire.",
             'email.email' => "L'adresse email n'est pas valide.",
             'email.unique' => 'Cette adresse email est déjà utilisée.',
@@ -288,7 +308,8 @@ class AdminMedecinController extends Controller
             'telephone.regex' => 'Numéro invalide : 9 chiffres, commençant par 77, 78, 76 ou 75.',
             'password.required' => 'Le mot de passe est obligatoire.',
             'password.min' => 'Le mot de passe doit contenir au moins 8 caractères.',
-            'specialite_id.required' => 'Veuillez choisir une spécialité.',
+            'specialite_ids.required' => 'Veuillez choisir au moins une spécialité.',
+            'specialite_ids.min' => 'Veuillez choisir au moins une spécialité.',
             'numero_ordre.required' => "Le numéro d'inscription à l'Ordre est obligatoire.",
             'numero_ordre.unique' => "Ce numéro d'inscription est déjà enregistré.",
             'tarif_consultation.required' => 'Le tarif de consultation est obligatoire.',

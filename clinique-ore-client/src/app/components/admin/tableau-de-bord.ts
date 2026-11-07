@@ -60,6 +60,10 @@ import { IconeComponent } from '../icone/icone';
           <span class="ico"><app-icone nom="check" [taille]="26"></app-icone></span>
           <span class="txt"><span class="nb">{{ d.rendez_vous.confirmes }}</span><span class="lib">Confirmés</span></span>
         </a>
+        <a class="stat c-rouge" routerLink="/admin/rendez-vous" [queryParams]="{ statut: 'refuse' }">
+          <span class="ico"><app-icone nom="croix" [taille]="26"></app-icone></span>
+          <span class="txt"><span class="nb">{{ d.rendez_vous.refuses }}</span><span class="lib">Refusés</span></span>
+        </a>
         <a class="stat c-rouge" routerLink="/admin/rendez-vous" [queryParams]="{ statut: 'annule' }">
           <span class="ico"><app-icone nom="croix" [taille]="26"></app-icone></span>
           <span class="txt"><span class="nb">{{ d.rendez_vous.annules }}</span><span class="lib">Annulés</span></span>

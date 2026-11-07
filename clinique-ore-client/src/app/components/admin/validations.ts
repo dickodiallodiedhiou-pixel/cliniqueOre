@@ -42,7 +42,7 @@ type Statut = 'pending' | 'approved' | 'rejected';
           <app-avatar [url]="m.user?.photo_url" [nom]="m.user?.name || ''" [taille]="72"></app-avatar>
           <div style="flex: 1">
             <h3>Dr {{ m.user?.name }}</h3>
-            <div class="muted">{{ m.specialite?.nom }} · N° Ordre : <strong>{{ m.numero_ordre }}</strong></div>
+            <div class="muted">{{ m.specialites_libelle }} · N° Ordre : <strong>{{ m.numero_ordre }}</strong></div>
             <div>{{ m.user?.email }} · {{ m.user?.telephone }}</div>
             <div>Tarif : {{ m.tarif_consultation | number }} FCFA</div>
           </div>

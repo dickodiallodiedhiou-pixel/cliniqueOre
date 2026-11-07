@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class RendezVous extends Model
@@ -21,6 +22,10 @@ class RendezVous extends Model
         'notes_medecin',
     ];
 
+    // Les comptes rendus médicaux ne sont visibles que par le médecin concerné et le patient :
+    // masqués par défaut, rendus visibles explicitement dans leurs réponses (makeVisible)
+    protected $hidden = ['notes_medecin'];
+
     // Un rendez-vous concerne un patient
     public function patient()
     {
@@ -31,6 +36,18 @@ class RendezVous extends Model
     public function medecin()
     {
         return $this->belongsTo(Medecin::class);
+    }
+
+    // Le délai minimum avant le rendez-vous (règle de la clinique) est-il respecté ?
+    public function delaiRespecte(): bool
+    {
+        return Carbon::parse($this->date_heure)->gte(now()->addHours((int) config('clinique.delai_modification_heures')));
+    }
+
+    // Le patient peut-il encore modifier ou annuler ce rendez-vous ?
+    public function estModifiable(): bool
+    {
+        return in_array($this->statut, ['en_attente', 'confirme'], true) && $this->delaiRespecte();
     }
 
     // Médecins ayant plusieurs rendez-vous actifs (en attente / confirmés) au même moment

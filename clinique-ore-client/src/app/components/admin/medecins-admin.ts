@@ -36,7 +36,7 @@ import { PaginationComponent } from '../pagination/pagination';
       <div class="photo-ligne">
         <label for="photo-med" class="photo-cliquable">
           <img *ngIf="apercu()" [src]="apercu()" alt="Aperçu" class="apercu">
-          <app-avatar *ngIf="!apercu()" [url]="edition()?.user?.photo_url" [nom]="form.name || 'Dr'" [taille]="72"></app-avatar>
+          <app-avatar *ngIf="!apercu()" [url]="edition()?.user?.photo_url" [nom]="(form.prenom + ' ' + form.nom).trim() || 'Dr'" [taille]="72"></app-avatar>
         </label>
         <div>
           <label for="photo-med" class="btn light small">{{ edition() ? 'Changer la photo' : 'Ajouter une photo' }}</label>
@@ -46,8 +46,12 @@ import { PaginationComponent } from '../pagination/pagination';
       </div>
 
       <div class="deux">
-        <div class="field"><label>Nom complet</label><input type="text" [(ngModel)]="form.name" name="name" required></div>
+        <div class="field"><label>Prénom</label><input type="text" [(ngModel)]="form.prenom" name="prenom" required></div>
+        <div class="field"><label>Nom</label><input type="text" [(ngModel)]="form.nom" name="nom" required></div>
+      </div>
+      <div class="deux">
         <div class="field"><label>Adresse email</label><input type="email" [(ngModel)]="form.email" name="email" required></div>
+        <div class="field"><label>Adresse (facultatif)</label><input type="text" [(ngModel)]="form.adresse" name="adresse" maxlength="255"></div>
       </div>
       <div class="deux">
         <div class="field">
@@ -58,13 +62,16 @@ import { PaginationComponent } from '../pagination/pagination';
             {{ telValide() ? 'Numéro valide' : '9 chiffres, commence par 77, 78, 76 ou 75' }}
           </span>
         </div>
-        <div class="field">
-          <label>Spécialité</label>
-          <select [(ngModel)]="form.specialite_id" name="specialite_id" required>
-            <option [ngValue]="null" disabled>Choisir une spécialité</option>
-            <option *ngFor="let s of specialitesDisponibles()" [ngValue]="s.id">{{ s.nom }}{{ s.actif ? '' : ' (désactivée)' }}</option>
-          </select>
+      </div>
+      <div class="field">
+        <label>Spécialités (une ou plusieurs)</label>
+        <div class="cases">
+          <label class="case-spec" *ngFor="let s of specialitesDisponibles()">
+            <input type="checkbox" [checked]="estChoisie(s.id)" (change)="basculerSpecialite(s.id)">
+            {{ s.nom }}{{ s.actif ? '' : ' (désactivée)' }}
+          </label>
         </div>
+        <span class="hint">La première spécialité cochée est la spécialité principale.</span>
       </div>
       <div class="deux">
         <div class="field"><label>N° d'inscription à l'Ordre</label><input type="text" [(ngModel)]="form.numero_ordre" name="numero_ordre" required></div>
@@ -117,7 +124,7 @@ import { PaginationComponent } from '../pagination/pagination';
         <app-avatar [url]="m.user?.photo_url" [nom]="m.user?.name || ''" [taille]="56"></app-avatar>
         <div class="grow">
           <h3>Dr {{ m.user?.name }}</h3>
-          <div class="muted">{{ m.specialite?.nom }} · N° {{ m.numero_ordre }} · {{ m.tarif_consultation | number }} FCFA</div>
+          <div class="muted">{{ m.specialites_libelle }} · N° {{ m.numero_ordre }} · {{ m.tarif_consultation | number }} FCFA</div>
           <div class="muted">{{ m.user?.email }} · {{ m.user?.telephone }}</div>
           <div class="pastilles">
             <span class="badge" [ngClass]="m.statut_validation">{{ libelleStatut(m.statut_validation) }}</span>
@@ -175,8 +182,8 @@ export class MedecinsAdminComponent implements OnInit, OnDestroy {
 
   private formVide() {
     return {
-      name: '', email: '', telephone: '', password: '',
-      specialite_id: null as number | null, numero_ordre: '',
+      prenom: '', nom: '', adresse: '', email: '', telephone: '', password: '',
+      specialite_ids: [] as number[], numero_ordre: '',
       tarif_consultation: null as number | null, biographie: ''
     };
   }
@@ -193,9 +200,19 @@ export class MedecinsAdminComponent implements OnInit, OnDestroy {
     this.libererApercu();
   }
 
+  estChoisie(id: number): boolean {
+    return this.form.specialite_ids.includes(id);
+  }
+
+  basculerSpecialite(id: number) {
+    this.form.specialite_ids = this.estChoisie(id)
+      ? this.form.specialite_ids.filter((x) => x !== id)
+      : [...this.form.specialite_ids, id];
+  }
+
   // Spécialités proposées dans le formulaire : actives, plus celle déjà associée au médecin modifié
   specialitesDisponibles() {
-    return this.specialites().filter((s) => s.actif || s.id === this.form.specialite_id);
+    return this.specialites().filter((s) => s.actif || this.form.specialite_ids.includes(s.id));
   }
 
   charger(page = 1) {
@@ -226,8 +243,13 @@ export class MedecinsAdminComponent implements OnInit, OnDestroy {
   modifier(m: any) {
     this.edition.set(m);
     this.form = {
-      name: m.user.name, email: m.user.email, telephone: m.user.telephone ?? '', password: '',
-      specialite_id: m.specialite_id, numero_ordre: m.numero_ordre ?? '',
+      prenom: m.user.prenom ?? '', nom: m.user.nom ?? m.user.name, adresse: m.user.adresse ?? '',
+      email: m.user.email, telephone: m.user.telephone ?? '', password: '',
+      // la spécialité principale passe en premier
+      specialite_ids: [...(m.specialites ?? [])]
+        .sort((a: any, b: any) => (a.id === m.specialite_id ? -1 : 0) - (b.id === m.specialite_id ? -1 : 0))
+        .map((x: any) => x.id),
+      numero_ordre: m.numero_ordre ?? '',
       tarif_consultation: m.tarif_consultation, biographie: m.biographie ?? ''
     };
     this.reinitialiserPhoto();
@@ -273,16 +295,20 @@ export class MedecinsAdminComponent implements OnInit, OnDestroy {
       this.erreurForm.set(TEL_ERREUR);
       return;
     }
-    if (!this.form.specialite_id) {
-      this.erreurForm.set('Choisissez une spécialité.');
+    if (this.form.specialite_ids.length === 0) {
+      this.erreurForm.set('Choisissez au moins une spécialité.');
       return;
     }
 
     const data = new FormData();
-    data.append('name', this.form.name);
+    data.append('prenom', this.form.prenom.trim());
+    data.append('nom', this.form.nom.trim());
+    data.append('adresse', this.form.adresse.trim());
     data.append('email', this.form.email);
     data.append('telephone', this.form.telephone);
-    data.append('specialite_id', String(this.form.specialite_id));
+    for (const id of this.form.specialite_ids) {
+      data.append('specialite_ids[]', String(id));
+    }
     data.append('numero_ordre', this.form.numero_ordre);
     data.append('tarif_consultation', String(this.form.tarif_consultation ?? ''));
     data.append('biographie', this.form.biographie ?? '');

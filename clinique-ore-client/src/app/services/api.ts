@@ -83,8 +83,103 @@ export class ApiService {
     return this.http.post(`${this.apiUrl}/rendez-vous/${id}/annuler`, {});
   }
 
-  updateStatutRendezVous(id: number, statut: 'confirme' | 'annule' | 'termine'): Observable<any> {
-    return this.http.patch(`${this.apiUrl}/rendez-vous/${id}/statut`, { statut });
+  // Changement de statut par le médecin ; le compte rendu est facultatif (utile à la clôture)
+  updateStatutRendezVous(id: number, statut: 'confirme' | 'refuse' | 'annule' | 'termine', notes?: string): Observable<any> {
+    const corps: Record<string, string> = { statut };
+    if (notes) corps['notes_medecin'] = notes;
+    return this.http.patch(`${this.apiUrl}/rendez-vous/${id}/statut`, corps);
+  }
+
+  // ----- Historique des consultations -----
+  getHistoriquePatient(page = 1): Observable<any> {
+    return this.http.get(`${this.apiUrl}/historique`, { params: this.params({ page }) });
+  }
+
+  getHistoriqueMedecin(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecin/historique`, { params: this.params(filtres) });
+  }
+
+  modifierNotes(id: number, notes: string): Observable<any> {
+    return this.http.patch(`${this.apiUrl}/rendez-vous/${id}/notes`, { notes_medecin: notes });
+  }
+
+  // ----- Espace médecin -----
+  medecinStats(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecin/tableau-de-bord`);
+  }
+
+  // Réponse paginée + { compteurs: { en_attente: n, confirme: n, ... } }
+  medecinRendezVous(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecin/rendez-vous`, { params: this.params(filtres) });
+  }
+
+  medecinPatient(id: number): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecin/patients/${id}`);
+  }
+
+  medecinPlanning(debut?: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecin/planning`, { params: this.params({ debut }) });
+  }
+
+  getIndisponibilites(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/medecin/indisponibilites`);
+  }
+
+  creerIndisponibilite(data: Record<string, any>): Observable<any> {
+    return this.http.post(`${this.apiUrl}/medecin/indisponibilites`, data);
+  }
+
+  supprimerIndisponibilite(id: number): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/medecin/indisponibilites/${id}`);
+  }
+
+  // ----- Médecins (profil détaillé et prochain créneau) -----
+  getMedecinsAvecCreneaux(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/medecins`, { params: this.params({ avec_creneaux: 1 }) });
+  }
+
+  getMedecin(id: number): Observable<any> {
+    return this.http.get(`${this.apiUrl}/medecins/${id}`);
+  }
+
+  // ----- Espace patient -----
+  patientStats(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/patient/tableau-de-bord`);
+  }
+
+  // onglet : avenir | passes | annules — réponse paginée + { compteurs }
+  patientRendezVous(filtres: Record<string, any> = {}): Observable<any> {
+    return this.http.get(`${this.apiUrl}/patient/rendez-vous`, { params: this.params(filtres) });
+  }
+
+  // ----- Notifications -----
+  notifications(page = 1): Observable<any> {
+    return this.http.get(`${this.apiUrl}/notifications`, { params: this.params({ page }) });
+  }
+
+  notificationsNonLues(): Observable<{ non_lues: number }> {
+    return this.http.get<{ non_lues: number }>(`${this.apiUrl}/notifications/non-lues`);
+  }
+
+  lireNotification(id: string): Observable<{ non_lues: number }> {
+    return this.http.post<{ non_lues: number }>(`${this.apiUrl}/notifications/${id}/lire`, {});
+  }
+
+  toutLireNotifications(): Observable<{ non_lues: number }> {
+    return this.http.post<{ non_lues: number }>(`${this.apiUrl}/notifications/tout-lire`, {});
+  }
+
+  // ----- Mot de passe -----
+  motDePasseOublie(email: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/mot-de-passe/oublie`, { email });
+  }
+
+  reinitialiserMotDePasse(data: Record<string, any>): Observable<any> {
+    return this.http.post(`${this.apiUrl}/mot-de-passe/reinitialiser`, data);
+  }
+
+  changerMotDePasse(data: Record<string, any>): Observable<any> {
+    return this.http.post(`${this.apiUrl}/me/mot-de-passe`, data);
   }
 
   // ----- Administration -----

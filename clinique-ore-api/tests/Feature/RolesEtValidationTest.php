@@ -29,13 +29,16 @@ class RolesEtValidationTest extends TestCase
     {
         $specialite = Specialite::firstOrCreate(['nom' => 'Cardiologie']);
 
-        return Medecin::create([
+        $medecin = Medecin::create([
             'user_id' => $this->user('medecin')->id,
             'specialite_id' => $specialite->id,
             'tarif_consultation' => 5000,
             'numero_ordre' => 'ORD-' . uniqid(),
             'statut_validation' => $statut,
         ]);
+        $medecin->specialites()->attach($specialite->id);
+
+        return $medecin;
     }
 
     public function test_annuaire_ne_liste_que_les_medecins_approuves(): void
@@ -295,14 +298,14 @@ class RolesEtValidationTest extends TestCase
         $rdv = RendezVous::create([
             'patient_id' => $patient->id,
             'medecin_id' => $medecin->id,
-            'date_heure' => '2026-10-26 09:00:00',
+            'date_heure' => '2026-11-02 09:00:00',
             'statut' => 'en_attente',
         ]);
 
         $this->postJson("/api/rendez-vous/{$rdv->id}/annuler")->assertOk();
 
         $this->getJson("/api/medecins/{$medecin->id}/creneaux")
-            ->assertJsonPath('2026-10-26', ['09:00', '09:30', '10:00', '10:30']);
+            ->assertJsonPath('2026-11-02', ['09:00', '09:30', '10:00', '10:30']);
     }
 
     public function test_patient_modifie_son_rendez_vous_qui_repasse_en_attente(): void
@@ -312,14 +315,14 @@ class RolesEtValidationTest extends TestCase
         $rdv = RendezVous::create([
             'patient_id' => $patient->id,
             'medecin_id' => $medecin->id,
-            'date_heure' => '2026-10-26 09:00:00',
+            'date_heure' => '2026-11-02 09:00:00',
             'statut' => 'confirme',
         ]);
 
-        $this->patchJson("/api/rendez-vous/{$rdv->id}", ['date_heure' => '2026-10-26 10:00'])->assertOk();
+        $this->patchJson("/api/rendez-vous/{$rdv->id}", ['date_heure' => '2026-11-02 10:00'])->assertOk();
 
         $this->assertDatabaseHas('rendez_vous', ['id' => $rdv->id, 'statut' => 'en_attente']);
-        $this->assertSame('2026-10-26 10:00', \Carbon\Carbon::parse(RendezVous::find($rdv->id)->date_heure)->format('Y-m-d H:i'));
+        $this->assertSame('2026-11-02 10:00', \Carbon\Carbon::parse(RendezVous::find($rdv->id)->date_heure)->format('Y-m-d H:i'));
     }
 
     public function test_un_patient_ne_peut_pas_modifier_le_rendez_vous_d_un_autre(): void
@@ -560,7 +563,7 @@ class RolesEtValidationTest extends TestCase
         $this->postJson('/api/admin/medecins', [
             'name' => 'Dr Test', 'email' => 'test@clinique.sn', 'password' => 'motdepasse1',
             'telephone' => '771234567', 'specialite_id' => $id, 'numero_ordre' => 'ORD-1', 'tarif_consultation' => 5000,
-        ])->assertStatus(422)->assertJsonValidationErrors('specialite_id');
+                ])->assertStatus(422)->assertJsonValidationErrors('specialite_ids.0');
     }
 
     public function test_admin_filtre_les_rendez_vous(): void
@@ -615,5 +618,677 @@ class RolesEtValidationTest extends TestCase
         $this->getJson('/api/admin/journal')
             ->assertOk()
             ->assertJsonPath('data.0.action', 'medecin_approuve');
+    }
+
+    // ---------- Historique des consultations et comptes rendus ----------
+
+    public function test_medecin_termine_une_consultation_avec_compte_rendu_visible_par_le_patient(): void
+    {
+        $medecin = $this->medecin(Medecin::APPROVED);
+        $patient = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $patient, now()->subHour(), 'confirme');
+
+        Sanctum::actingAs($medecin->user);
+        $this->patchJson("/api/rendez-vous/{$rdv->id}/statut", [
+            'statut' => 'termine',
+            'notes_medecin' => 'Tension normale. Repos conseillé pendant 3 jours.',
+        ])->assertOk()->assertJsonPath('rendez_vous.notes_medecin', 'Tension normale. Repos conseillé pendant 3 jours.');
+
+        Sanctum::actingAs($patient->user);
+        $this->getJson('/api/historique')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.notes_medecin', 'Tension normale. Repos conseillé pendant 3 jours.')
+            ->assertJsonPath('data.0.medecin.user.id', $medecin->user_id);
+    }
+
+    public function test_historique_patient_ne_contient_que_ses_consultations_terminees(): void
+    {
+        $medecin = $this->medecin(Medecin::APPROVED);
+        $moi = $this->patientProfil();
+        $autre = $this->patientProfil();
+        $this->rdv($medecin, $moi, now()->subDays(3), 'termine');
+        $this->rdv($medecin, $moi, now()->addDay(), 'en_attente');
+        $this->rdv($medecin, $autre, now()->subDays(2), 'termine');
+
+        Sanctum::actingAs($moi->user);
+
+        $this->getJson('/api/historique')->assertOk()->assertJsonPath('total', 1);
+    }
+
+    public function test_l_admin_ne_voit_pas_les_comptes_rendus_medicaux(): void
+    {
+        $medecin = $this->medecin(Medecin::APPROVED);
+        $patient = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $patient, now()->subDay(), 'termine');
+        $rdv->update(['notes_medecin' => 'Information médicale confidentielle']);
+
+        $this->admin();
+        $reponse = $this->getJson('/api/admin/rendez-vous')->assertOk();
+
+        $this->assertArrayNotHasKey('notes_medecin', $reponse->json('data.0'));
+        $this->assertStringNotContainsString('confidentielle', $reponse->getContent());
+    }
+
+    public function test_medecin_corrige_le_compte_rendu_d_une_consultation_terminee(): void
+    {
+        $medecin = $this->medecin(Medecin::APPROVED);
+        $patient = $this->patientProfil();
+        $termine = $this->rdv($medecin, $patient, now()->subDay(), 'termine');
+        $confirme = $this->rdv($medecin, $patient, now()->addDay(), 'confirme');
+
+        Sanctum::actingAs($medecin->user);
+
+        $this->patchJson("/api/rendez-vous/{$termine->id}/notes", ['notes_medecin' => 'Contrôle dans un mois.'])->assertOk();
+        $this->assertDatabaseHas('rendez_vous', ['id' => $termine->id, 'notes_medecin' => 'Contrôle dans un mois.']);
+
+        // vide : refusé ; consultation non terminée : refusé
+        $this->patchJson("/api/rendez-vous/{$termine->id}/notes", ['notes_medecin' => ''])->assertStatus(422);
+        $this->patchJson("/api/rendez-vous/{$confirme->id}/notes", ['notes_medecin' => 'Trop tôt'])->assertStatus(422);
+
+        // un autre médecin ne peut pas modifier ce compte rendu
+        $autre = $this->medecin(Medecin::APPROVED);
+        Sanctum::actingAs($autre->user);
+        $this->patchJson("/api/rendez-vous/{$termine->id}/notes", ['notes_medecin' => 'Intrus'])->assertForbidden();
+    }
+
+    public function test_historique_medecin_filtre_par_patient_et_reste_limite_a_ses_consultations(): void
+    {
+        $medecin = $this->medecin(Medecin::APPROVED);
+        $autreMedecin = $this->medecin(Medecin::APPROVED);
+        $p1 = $this->patientProfil();
+        $p2 = $this->patientProfil();
+        $this->rdv($medecin, $p1, now()->subDays(5), 'termine');
+        $this->rdv($medecin, $p1, now()->subDays(2), 'termine');
+        $this->rdv($medecin, $p2, now()->subDays(1), 'termine');
+        $this->rdv($autreMedecin, $p1, now()->subDays(1), 'termine'); // consultation d'un autre médecin
+
+        Sanctum::actingAs($medecin->user);
+
+        $this->getJson('/api/medecin/historique')->assertOk()->assertJsonPath('total', 3);
+        $this->getJson("/api/medecin/historique?patient_id={$p1->id}")->assertOk()->assertJsonPath('total', 2);
+    }
+
+    public function test_medecin_en_attente_n_a_pas_acces_a_l_historique(): void
+    {
+        $pending = $this->medecin(Medecin::PENDING);
+        Sanctum::actingAs($pending->user);
+
+        $this->getJson('/api/medecin/historique')->assertForbidden();
+    }
+
+    // ---------- Espace médecin : tableau de bord, rendez-vous, fiche patient, planning, congés ----------
+
+    public function test_tableau_de_bord_du_medecin(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // nous sommes le lundi 26/10/2026 à 08:00
+        $patient = $this->patientProfil();
+
+        $this->rdv($medecin, $patient, now()->setTime(10, 0), 'confirme');          // aujourd'hui
+        $this->rdv($medecin, $patient, now()->addDay()->setTime(9, 0), 'en_attente'); // demain
+        $this->rdv($medecin, $patient, now()->subDay()->setTime(9, 0), 'termine');   // hier
+        $this->rdv($medecin, $patient, now()->addDays(2)->setTime(9, 0), 'annule');
+
+        // rendez-vous d'un autre médecin : ne doit pas être compté
+        $autre = $this->medecin(Medecin::APPROVED);
+        $this->rdv($autre, $patient, now()->setTime(11, 0), 'en_attente');
+
+        Sanctum::actingAs($medecin->user);
+
+        $this->getJson('/api/medecin/tableau-de-bord')
+            ->assertOk()
+            ->assertJsonPath('rendez_vous.aujourdhui', 1)
+            ->assertJsonPath('rendez_vous.en_attente', 1)
+            ->assertJsonPath('rendez_vous.confirmes', 1)
+            ->assertJsonPath('rendez_vous.termines', 1)
+            ->assertJsonPath('rendez_vous.annules', 1)
+            ->assertJsonCount(1, 'aujourdhui_liste')
+            ->assertJsonCount(2, 'prochains')
+            ->assertJsonCount(7, 'par_jour')
+            ->assertJsonPath('prochain_creneau.date', '2026-10-26');
+    }
+
+    public function test_liste_des_rendez_vous_du_medecin_filtrable_avec_compteurs(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $autre = $this->medecin(Medecin::APPROVED);
+        $p1 = $this->patientProfil();
+        $p2 = $this->patientProfil();
+
+        $this->rdv($medecin, $p1, now()->addDay(), 'en_attente');
+        $this->rdv($medecin, $p1, now()->addDays(2), 'confirme');
+        $termine = $this->rdv($medecin, $p2, now()->subDays(2), 'termine');
+        $termine->update(['notes_medecin' => 'Compte rendu visible du médecin']);
+        $this->rdv($medecin, $p2, now()->addDays(3), 'annule');
+        $this->rdv($autre, $p1, now()->addDay(), 'en_attente'); // autre médecin
+
+        Sanctum::actingAs($medecin->user);
+
+        $this->getJson('/api/medecin/rendez-vous')
+            ->assertOk()
+            ->assertJsonPath('total', 4)
+            ->assertJsonPath('compteurs.en_attente', 1)
+            ->assertJsonPath('compteurs.termine', 1)
+            ->assertJsonPath('compteurs.annule', 1);
+
+        $this->getJson('/api/medecin/rendez-vous?statut=annule')->assertJsonPath('total', 1);
+        $this->getJson("/api/medecin/rendez-vous?patient_id={$p2->id}")->assertJsonPath('total', 2);
+
+        $this->getJson('/api/medecin/rendez-vous?statut=termine')
+            ->assertJsonPath('data.0.notes_medecin', 'Compte rendu visible du médecin');
+    }
+
+    public function test_medecin_en_attente_n_a_pas_acces_a_son_espace(): void
+    {
+        $pending = $this->medecin(Medecin::PENDING);
+        Sanctum::actingAs($pending->user);
+
+        foreach (['tableau-de-bord', 'rendez-vous', 'planning', 'indisponibilites'] as $route) {
+            $this->getJson("/api/medecin/{$route}")->assertForbidden();
+        }
+    }
+
+    public function test_fiche_patient_reservee_aux_patients_ayant_rendez_vous_avec_le_medecin(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $connu = $this->patientProfil();
+        $inconnu = $this->patientProfil();
+        $this->rdv($medecin, $connu, now()->subDays(10), 'termine');
+        $this->rdv($medecin, $connu, now()->addDays(3), 'confirme');
+
+        Sanctum::actingAs($medecin->user);
+
+        $this->getJson("/api/medecin/patients/{$connu->id}")
+            ->assertOk()
+            ->assertJsonPath('nb_consultations', 1)
+            ->assertJsonPath('nom', $connu->user->name);
+
+        $this->getJson("/api/medecin/patients/{$inconnu->id}")->assertForbidden();
+    }
+
+    public function test_un_conge_retire_les_creneaux_et_previent_des_rendez_vous_deja_pris(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $this->rdv($medecin, $patient, '2026-11-02 09:30:00', 'confirme');
+        Sanctum::actingAs($medecin->user);
+
+        $this->postJson('/api/medecin/indisponibilites', [
+            'date_debut' => '2026-11-02',
+            'date_fin' => '2026-11-02',
+            'motif' => 'Congé',
+        ])->assertCreated()->assertJsonCount(1, 'rendez_vous_concernes');
+
+        $creneaux = $this->getJson("/api/medecins/{$medecin->id}/creneaux")->assertOk()->json();
+        $this->assertArrayNotHasKey('2026-11-02', $creneaux);   // journée bloquée
+        $this->assertArrayHasKey('2026-10-26', $creneaux);      // aujourd'hui toujours disponible
+
+        // suppression : les créneaux reviennent
+        $id = $this->getJson('/api/medecin/indisponibilites')->assertJsonCount(1)->json('0.id');
+        $this->deleteJson("/api/medecin/indisponibilites/{$id}")->assertOk();
+        $this->assertArrayHasKey('2026-11-02', $this->getJson("/api/medecins/{$medecin->id}/creneaux")->json());
+    }
+
+    public function test_une_indisponibilite_partielle_ne_bloque_que_ses_heures(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        Sanctum::actingAs($medecin->user);
+
+        $this->postJson('/api/medecin/indisponibilites', [
+            'date_debut' => '2026-11-02',
+            'date_fin' => '2026-11-02',
+            'heure_debut' => '09:30',
+            'heure_fin' => '10:30',
+        ])->assertCreated();
+
+        $this->getJson("/api/medecins/{$medecin->id}/creneaux")
+            ->assertJsonPath('2026-11-02', ['09:00', '10:30']);
+    }
+
+    public function test_validation_des_indisponibilites(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        Sanctum::actingAs($medecin->user);
+
+        // date passée
+        $this->postJson('/api/medecin/indisponibilites', ['date_debut' => '2026-10-01', 'date_fin' => '2026-10-02'])
+            ->assertStatus(422)->assertJsonValidationErrors('date_debut');
+        // fin avant début
+        $this->postJson('/api/medecin/indisponibilites', ['date_debut' => '2026-11-05', 'date_fin' => '2026-11-03'])
+            ->assertStatus(422)->assertJsonValidationErrors('date_fin');
+        // une seule heure fournie
+        $this->postJson('/api/medecin/indisponibilites', ['date_debut' => '2026-11-05', 'date_fin' => '2026-11-05', 'heure_debut' => '09:00'])
+            ->assertStatus(422);
+        // heure de fin avant l'heure de début
+        $this->postJson('/api/medecin/indisponibilites', ['date_debut' => '2026-11-05', 'date_fin' => '2026-11-05', 'heure_debut' => '11:00', 'heure_fin' => '09:00'])
+            ->assertStatus(422)->assertJsonValidationErrors('heure_fin');
+    }
+
+    public function test_un_medecin_ne_peut_pas_supprimer_l_indisponibilite_d_un_autre(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        Sanctum::actingAs($medecin->user);
+        $id = $this->postJson('/api/medecin/indisponibilites', ['date_debut' => '2026-11-02', 'date_fin' => '2026-11-02'])
+            ->assertCreated()->json('indisponibilite.id');
+
+        $autre = $this->medecin(Medecin::APPROVED);
+        Sanctum::actingAs($autre->user);
+
+        $this->deleteJson("/api/medecin/indisponibilites/{$id}")->assertNotFound();
+    }
+
+    public function test_planning_hebdomadaire_avec_etats_des_creneaux(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // lundi 26/10 à 08:00, plage 9h-11h par 30 min
+        $patient = $this->patientProfil();
+        $this->rdv($medecin, $patient, '2026-10-26 09:00:00', 'confirme');
+        Sanctum::actingAs($medecin->user);
+
+        $this->postJson('/api/medecin/indisponibilites', [
+            'date_debut' => '2026-10-26', 'date_fin' => '2026-10-26', 'heure_debut' => '10:00', 'heure_fin' => '11:00',
+        ])->assertCreated();
+
+        $reponse = $this->getJson('/api/medecin/planning?debut=2026-10-28')->assertOk(); // mercredi -> semaine du lundi 26
+
+        $reponse->assertJsonPath('debut', '2026-10-26')
+            ->assertJsonCount(7, 'jours')
+            ->assertJsonPath('jours.0.travaille', true)
+            ->assertJsonPath('jours.0.creneaux.0.etat', 'reserve')
+            ->assertJsonPath('jours.0.creneaux.0.rdv.patient', $patient->user->name)
+            ->assertJsonPath('jours.0.creneaux.1.etat', 'libre')      // 09:30
+            ->assertJsonPath('jours.0.creneaux.2.etat', 'bloque')     // 10:00
+            ->assertJsonPath('jours.1.travaille', false);             // mardi : repos
+    }
+
+    // ---------- Espace patient : règles, notifications, mot de passe, profils ----------
+
+    public function test_le_patient_ne_peut_pas_modifier_ou_annuler_moins_de_24h_avant(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // lundi 26/10/2026 à 08:00
+        $patient = $this->patientConnecte();
+        $proche = $this->rdv($medecin, $patient, '2026-10-26 10:00:00', 'confirme'); // dans 2 heures
+        $loin = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'confirme');   // dans 7 jours
+
+        $this->postJson("/api/rendez-vous/{$proche->id}/annuler")->assertStatus(422);
+        $this->patchJson("/api/rendez-vous/{$proche->id}", ['date_heure' => '2026-11-02 10:00'])->assertStatus(422);
+        $this->assertDatabaseHas('rendez_vous', ['id' => $proche->id, 'statut' => 'confirme']);
+
+        $this->postJson("/api/rendez-vous/{$loin->id}/annuler")->assertOk();
+    }
+
+    public function test_le_patient_est_notifie_quand_le_medecin_confirme_puis_lit_la_notification(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'en_attente');
+
+        Sanctum::actingAs($medecin->user);
+        $this->patchJson("/api/rendez-vous/{$rdv->id}/statut", ['statut' => 'confirme'])->assertOk();
+
+        Sanctum::actingAs($patient->user);
+        $reponse = $this->getJson('/api/notifications')
+            ->assertOk()
+            ->assertJsonPath('non_lues', 1)
+            ->assertJsonPath('data.0.data.evenement', 'confirme')
+            ->assertJsonPath('data.0.data.titre', 'Rendez-vous confirmé');
+        $this->assertStringContainsString('Dr', $reponse->json('data.0.data.message'));
+
+        $this->getJson('/api/notifications/non-lues')->assertJsonPath('non_lues', 1);
+
+        $id = $reponse->json('data.0.id');
+        $this->postJson("/api/notifications/{$id}/lire")->assertOk()->assertJsonPath('non_lues', 0);
+    }
+
+    public function test_notifications_de_refus_et_de_fin_de_consultation(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $demande = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'en_attente');
+        $consultation = $this->rdv($medecin, $patient, '2026-10-26 07:00:00', 'confirme');
+
+        Sanctum::actingAs($medecin->user);
+        $this->patchJson("/api/rendez-vous/{$demande->id}/statut", ['statut' => 'refuse'])->assertOk();
+        $this->assertDatabaseHas('rendez_vous', ['id' => $demande->id, 'statut' => 'refuse']);
+        $this->patchJson("/api/rendez-vous/{$consultation->id}/statut", ['statut' => 'termine', 'notes_medecin' => 'RAS'])->assertOk();
+
+        Sanctum::actingAs($patient->user);
+        $reponse = $this->getJson('/api/notifications')->assertOk()->assertJsonCount(2, 'data');
+
+        $evenements = collect($reponse->json('data'))->pluck('data.evenement')->sort()->values()->all();
+        $this->assertSame(['refuse', 'termine'], $evenements);
+
+        $this->postJson('/api/notifications/tout-lire')->assertOk()->assertJsonPath('non_lues', 0);
+    }
+
+    public function test_le_patient_est_notifie_quand_l_admin_deplace_son_rendez_vous(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'confirme');
+
+        $this->admin();
+        $this->patchJson("/api/admin/rendez-vous/{$rdv->id}", ['date_heure' => '2026-11-02 10:00'])->assertOk();
+
+        Sanctum::actingAs($patient->user);
+        $this->getJson('/api/notifications')->assertJsonPath('data.0.data.evenement', 'modifie');
+    }
+
+    public function test_un_utilisateur_ne_peut_pas_lire_la_notification_d_un_autre(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $a = $this->patientProfil();
+        $b = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $a, '2026-11-02 09:00:00', 'en_attente');
+
+        Sanctum::actingAs($medecin->user);
+        $this->patchJson("/api/rendez-vous/{$rdv->id}/statut", ['statut' => 'confirme'])->assertOk();
+
+        Sanctum::actingAs($a->user);
+        $id = $this->getJson('/api/notifications')->json('data.0.id');
+
+        Sanctum::actingAs($b->user);
+        $this->postJson("/api/notifications/{$id}/lire")->assertNotFound();
+    }
+
+    public function test_reinitialisation_du_mot_de_passe_par_lien(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $user = $this->user('patient');
+        $user->update(['password' => 'ancien1234']);
+
+        $this->postJson('/api/mot-de-passe/oublie', ['email' => $user->email])->assertOk();
+        \Illuminate\Support\Facades\Notification::assertSentTo($user, \Illuminate\Auth\Notifications\ResetPassword::class);
+
+        // compte inconnu : même réponse, mais rien n'est envoyé
+        $this->postJson('/api/mot-de-passe/oublie', ['email' => 'inconnu@test.sn'])->assertOk();
+        \Illuminate\Support\Facades\Notification::assertCount(1);
+
+        $token = \Illuminate\Support\Facades\Password::createToken($user);
+
+        // confirmation différente : refusée
+        $this->postJson('/api/mot-de-passe/reinitialiser', [
+            'token' => $token, 'email' => $user->email,
+            'password' => 'nouveau1234', 'password_confirmation' => 'autre1234',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/mot-de-passe/reinitialiser', [
+            'token' => $token, 'email' => $user->email,
+            'password' => 'nouveau1234', 'password_confirmation' => 'nouveau1234',
+        ])->assertOk();
+
+        // le lien ne sert qu'une fois
+        $this->postJson('/api/mot-de-passe/reinitialiser', [
+            'token' => $token, 'email' => $user->email,
+            'password' => 'autre12345', 'password_confirmation' => 'autre12345',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'nouveau1234'])->assertOk();
+        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'ancien1234'])->assertStatus(401);
+    }
+
+    public function test_changement_de_mot_de_passe_exige_l_ancien_mot_de_passe(): void
+    {
+        $user = $this->user('patient');
+        $user->update(['password' => 'ancien1234']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/me/mot-de-passe', [
+            'current_password' => 'faux', 'password' => 'nouveau1234', 'password_confirmation' => 'nouveau1234',
+        ])->assertStatus(422)->assertJsonValidationErrors('current_password');
+
+        // nouveau mot de passe identique à l'ancien : refusé
+        $this->postJson('/api/me/mot-de-passe', [
+            'current_password' => 'ancien1234', 'password' => 'ancien1234', 'password_confirmation' => 'ancien1234',
+        ])->assertStatus(422)->assertJsonValidationErrors('password');
+
+        $this->postJson('/api/me/mot-de-passe', [
+            'current_password' => 'ancien1234', 'password' => 'nouveau1234', 'password_confirmation' => 'nouveau1234',
+        ])->assertOk();
+
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('nouveau1234', $user->fresh()->password));
+    }
+
+    public function test_le_patient_renseigne_sa_date_de_naissance(): void
+    {
+        $patient = $this->patientConnecte();
+
+        $this->postJson('/api/me', ['name' => 'Awa Diop', 'telephone' => '771234567', 'date_naissance' => '2999-01-01'])
+            ->assertStatus(422)->assertJsonValidationErrors('date_naissance');
+
+        $this->postJson('/api/me', ['name' => 'Awa Diop', 'telephone' => '771234567', 'date_naissance' => '1998-05-14'])
+            ->assertOk();
+
+        $this->assertSame('1998-05-14', \Carbon\Carbon::parse(Patient::find($patient->id)->date_naissance)->format('Y-m-d'));
+    }
+
+    public function test_profil_public_du_medecin_avec_horaires_et_prochain_creneau(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // plage du lundi 9h-11h
+
+        $this->getJson("/api/medecins/{$medecin->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'disponibilites')
+            ->assertJsonPath('disponibilites.0.jour', 1)
+            ->assertJsonPath('disponibilites.0.heure_debut', '09:00')
+            ->assertJsonPath('prochain_creneau.date', '2026-10-26');
+
+        // la liste publique ne calcule les créneaux que sur demande
+        $this->getJson('/api/medecins')->assertOk()->assertJsonMissingPath('0.prochain_creneau');
+        $this->getJson('/api/medecins?avec_creneaux=1')->assertOk()->assertJsonPath('0.prochain_creneau.heure', '09:00');
+    }
+
+    public function test_tableau_de_bord_et_liste_des_rendez_vous_du_patient(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // lundi 26/10/2026 à 08:00
+        $patient = $this->patientConnecte();
+        $this->rdv($medecin, $patient, '2026-10-27 09:00:00', 'en_attente'); // demain
+        $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'confirme');   // dans 7 jours
+        $this->rdv($medecin, $patient, '2026-10-20 09:00:00', 'termine');    // passé
+        $this->rdv($medecin, $patient, '2026-10-22 09:00:00', 'confirme');   // passé, jamais clôturé
+        $this->rdv($medecin, $patient, '2026-11-03 09:00:00', 'annule');
+        $this->rdv($medecin, $this->patientProfil(), '2026-10-28 09:00:00', 'en_attente'); // autre patient
+
+        $this->getJson('/api/patient/tableau-de-bord')
+            ->assertOk()
+            ->assertJsonPath('rendez_vous.a_venir', 2)
+            ->assertJsonPath('rendez_vous.en_attente', 1)
+            ->assertJsonPath('rendez_vous.confirmes', 1)
+            ->assertJsonPath('rendez_vous.termines', 1)
+            ->assertJsonPath('rendez_vous.annules', 1)
+            ->assertJsonPath('prochain.statut', 'en_attente')
+            ->assertJsonPath('prochain.modifiable', true)
+            ->assertJsonPath('prochain.delai_modification_heures', 24);
+
+        $this->getJson('/api/patient/rendez-vous?onglet=avenir')
+            ->assertOk()
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.statut', 'en_attente') // le plus proche d'abord
+            ->assertJsonPath('compteurs.avenir', 2)
+            ->assertJsonPath('compteurs.passes', 2)
+            ->assertJsonPath('compteurs.annules', 1);
+
+        $this->getJson('/api/patient/rendez-vous?onglet=passes')->assertJsonPath('total', 2);
+        $this->getJson('/api/patient/rendez-vous?onglet=annules')->assertJsonPath('total', 1);
+        $this->getJson('/api/patient/rendez-vous?onglet=autre')->assertStatus(422);
+    }
+
+    // ---------- Alignement sur le diagramme de classes ----------
+
+    public function test_un_medecin_peut_avoir_plusieurs_specialites_et_apparait_pour_chacune(): void
+    {
+        $cardio = Specialite::firstOrCreate(['nom' => 'Cardiologie']);
+        $pedia = Specialite::firstOrCreate(['nom' => 'Pédiatrie']);
+        $this->admin();
+
+        $id = $this->postJson('/api/admin/medecins', [
+            'prenom' => 'Awa', 'nom' => 'Sy', 'email' => 'awa.sy@clinique.sn', 'password' => 'motdepasse1',
+            'telephone' => '771112233', 'adresse' => 'Dakar, Plateau',
+            'specialite_ids' => [$pedia->id, $cardio->id], 'numero_ordre' => 'ORD-77', 'tarif_consultation' => 8000,
+        ])->assertCreated()
+            ->assertJsonPath('medecin.user.name', 'Awa Sy')
+            ->assertJsonPath('medecin.user.adresse', 'Dakar, Plateau')
+            ->assertJsonCount(2, 'medecin.specialites')
+            ->assertJsonPath('medecin.specialite.nom', 'Pédiatrie') // la première est la principale
+            ->json('medecin.id');
+
+        $this->assertDatabaseCount('medecin_specialite', 2);
+
+        // visible dans l'annuaire pour chacune de ses spécialités
+        $this->getJson("/api/medecins?specialite_id={$cardio->id}")->assertJsonCount(1);
+        $this->getJson("/api/medecins?specialite_id={$pedia->id}")
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.specialites_libelle', 'Pédiatrie, Cardiologie');
+        $this->getJson("/api/admin/medecins?specialite_id={$cardio->id}")->assertJsonCount(1, 'data');
+
+        // un rendez-vous compte dans chacune des spécialités du médecin
+        $this->rdv(Medecin::find($id), $this->patientProfil(), now()->addDay(), 'en_attente');
+        $this->getJson('/api/admin/tableau-de-bord')->assertJsonCount(2, 'par_specialite');
+
+        // modification : une seule spécialité conservée, elle devient la principale
+        $this->postJson("/api/admin/medecins/{$id}/modifier", [
+            'prenom' => 'Awa', 'nom' => 'Sy', 'email' => 'awa.sy@clinique.sn', 'telephone' => '771112233',
+            'specialite_ids' => [$cardio->id], 'numero_ordre' => 'ORD-77', 'tarif_consultation' => 8000,
+        ])->assertOk()->assertJsonCount(1, 'medecin.specialites')->assertJsonPath('medecin.specialite.nom', 'Cardiologie');
+        $this->assertDatabaseCount('medecin_specialite', 1);
+    }
+
+    public function test_un_medecin_doit_avoir_au_moins_une_specialite_valide(): void
+    {
+        $this->admin();
+        $base = [
+            'prenom' => 'Awa', 'nom' => 'Sy', 'email' => 'awa.sy@clinique.sn', 'password' => 'motdepasse1',
+            'telephone' => '771112233', 'numero_ordre' => 'ORD-78', 'tarif_consultation' => 8000,
+        ];
+
+        $this->postJson('/api/admin/medecins', $base)->assertStatus(422)->assertJsonValidationErrors('specialite_ids');
+        $this->postJson('/api/admin/medecins', $base + ['specialite_ids' => []])->assertStatus(422);
+        $this->postJson('/api/admin/medecins', $base + ['specialite_ids' => [9999]])->assertStatus(422);
+    }
+
+    public function test_le_medecin_refuse_une_demande_avec_le_statut_refuse(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $demande = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'en_attente');
+        $confirme = $this->rdv($medecin, $patient, '2026-11-02 10:00:00', 'confirme');
+
+        Sanctum::actingAs($medecin->user);
+
+        // un rendez-vous confirmé ne se refuse pas : il s'annule ; une demande ne s'annule pas : elle se refuse
+        $this->patchJson("/api/rendez-vous/{$confirme->id}/statut", ['statut' => 'refuse'])->assertStatus(422);
+        $this->patchJson("/api/rendez-vous/{$demande->id}/statut", ['statut' => 'annule'])->assertStatus(422);
+
+        $this->patchJson("/api/rendez-vous/{$demande->id}/statut", ['statut' => 'refuse'])->assertOk();
+        $this->patchJson("/api/rendez-vous/{$confirme->id}/statut", ['statut' => 'annule'])->assertOk();
+        $this->assertDatabaseHas('rendez_vous', ['id' => $demande->id, 'statut' => 'refuse']);
+        $this->assertDatabaseHas('rendez_vous', ['id' => $confirme->id, 'statut' => 'annule']);
+
+        $this->getJson('/api/medecin/tableau-de-bord')
+            ->assertJsonPath('rendez_vous.refuses', 1)
+            ->assertJsonPath('rendez_vous.annules', 1);
+
+        // les créneaux refusés ou annulés sont de nouveau libres
+        $this->getJson("/api/medecins/{$medecin->id}/creneaux")
+            ->assertJsonPath('2026-11-02', ['09:00', '09:30', '10:00', '10:30']);
+
+        // le patient retrouve la demande refusée avec les annulés, et en est notifié
+        Sanctum::actingAs($patient->user);
+        $this->getJson('/api/patient/rendez-vous?onglet=annules')->assertJsonPath('total', 2);
+        $this->getJson('/api/notifications')->assertJsonFragment(['evenement' => 'refuse']);
+    }
+
+    public function test_une_plage_inactive_ne_genere_pas_de_creneaux(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // plage active : lundi 9h-11h
+        Sanctum::actingAs($medecin->user);
+
+        $this->putJson('/api/medecin/disponibilites', ['plages' => [
+            ['jour' => 1, 'heure_debut' => '09:00', 'heure_fin' => '11:00', 'duree' => 30, 'actif' => false],
+            ['jour' => 2, 'heure_debut' => '14:00', 'heure_fin' => '16:00', 'duree' => 30],
+        ]])->assertOk();
+
+        $this->getJson('/api/medecin/disponibilites')
+            ->assertJsonCount(2)
+            ->assertJsonPath('0.actif', false)
+            ->assertJsonPath('1.actif', true);
+
+        $creneaux = $this->getJson("/api/medecins/{$medecin->id}/creneaux")->json();
+        $this->assertArrayNotHasKey('2026-10-26', $creneaux); // lundi désactivé
+        $this->assertArrayHasKey('2026-10-27', $creneaux);    // mardi actif
+
+        // le profil public n'affiche que les plages actives
+        $this->getJson("/api/medecins/{$medecin->id}")
+            ->assertJsonCount(1, 'disponibilites')
+            ->assertJsonPath('disponibilites.0.jour', 2);
+
+        // une plage inactive peut chevaucher une plage active
+        $this->putJson('/api/medecin/disponibilites', ['plages' => [
+            ['jour' => 3, 'heure_debut' => '09:00', 'heure_fin' => '12:00', 'duree' => 30],
+            ['jour' => 3, 'heure_debut' => '10:00', 'heure_fin' => '11:00', 'duree' => 30, 'actif' => false],
+        ]])->assertOk();
+    }
+
+    public function test_inscription_patient_avec_nom_prenom_adresse_et_sexe(): void
+    {
+        Storage::fake();
+        $base = [
+            'prenom' => 'Awa', 'nom' => 'Diop', 'adresse' => 'Pikine, Dakar', 'sexe' => 'F',
+            'email' => 'awa.diop@test.sn', 'telephone' => '771234567',
+            'password' => 'password123', 'password_confirmation' => 'password123',
+        ];
+        $photo = fn () => UploadedFile::fake()->create('p.jpg', 50, 'image/jpeg');
+
+        $this->post('/api/register', $base + ['photo' => $photo()], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('user.name', 'Awa Diop')
+            ->assertJsonPath('user.prenom', 'Awa')
+            ->assertJsonPath('user.nom', 'Diop')
+            ->assertJsonPath('user.adresse', 'Pikine, Dakar');
+
+        $patient = User::where('email', 'awa.diop@test.sn')->first()->patient;
+        $this->assertSame('F', $patient->sexe);
+
+        // l'administrateur voit l'adresse et le sexe du patient
+        $this->admin();
+        $this->getJson("/api/admin/patients/{$patient->id}")
+            ->assertOk()
+            ->assertJsonPath('sexe', 'F')
+            ->assertJsonPath('user.adresse', 'Pikine, Dakar');
+
+        // sexe invalide
+        $this->post('/api/register', array_merge($base, ['email' => 'autre@test.sn', 'sexe' => 'X', 'photo' => $photo()]), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('sexe');
+
+        // prénom manquant
+        $sansPrenom = $base;
+        unset($sansPrenom['prenom']);
+        $this->post('/api/register', array_merge($sansPrenom, ['email' => 'autre2@test.sn', 'photo' => $photo()]), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('prenom');
+    }
+
+    public function test_le_profil_met_a_jour_nom_prenom_adresse_et_sexe(): void
+    {
+        $patient = $this->patientConnecte();
+
+        $this->postJson('/api/me', [
+            'prenom' => 'Fatou', 'nom' => 'Ndiaye', 'adresse' => 'Rufisque', 'telephone' => '781234567', 'sexe' => 'F',
+        ])->assertOk()->assertJsonPath('user.name', 'Fatou Ndiaye');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $patient->user_id, 'prenom' => 'Fatou', 'nom' => 'Ndiaye', 'name' => 'Fatou Ndiaye', 'adresse' => 'Rufisque',
+        ]);
+        $this->assertDatabaseHas('patients', ['id' => $patient->id, 'sexe' => 'F']);
+    }
+
+    public function test_le_nom_complet_est_synchronise_avec_nom_et_prenom(): void
+    {
+        $u = User::factory()->create(['role' => 'patient', 'name' => 'Moussa Fall']);
+        $this->assertSame(['Moussa', 'Fall'], [$u->prenom, $u->nom]);
+
+        $u->update(['prenom' => 'Mamadou', 'nom' => 'Sarr']);
+        $this->assertSame('Mamadou Sarr', $u->fresh()->name);
+
+        $u->update(['name' => 'Aminata Ba Diallo']);
+        $this->assertSame(['Aminata', 'Ba Diallo'], [$u->fresh()->prenom, $u->fresh()->nom]);
     }
 }

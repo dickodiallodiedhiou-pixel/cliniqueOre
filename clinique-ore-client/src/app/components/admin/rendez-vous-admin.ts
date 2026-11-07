@@ -42,7 +42,7 @@ import { PaginationComponent } from '../pagination/pagination';
           <label>Statut</label>
           <select [(ngModel)]="edition.statut" name="e-statut">
             <option value="en_attente">En attente</option><option value="confirme">Confirmé</option>
-            <option value="annule">Annulé</option><option value="termine">Terminé</option>
+            <option value="refuse">Refusé</option><option value="annule">Annulé</option><option value="termine">Terminé</option>
           </select>
         </div>
         <div class="field"><label>Date et heure</label><input type="datetime-local" [(ngModel)]="edition.date_heure" name="e-date"></div>
@@ -50,7 +50,7 @@ import { PaginationComponent } from '../pagination/pagination';
           <label>Médecin</label>
           <select [(ngModel)]="edition.medecin_id" name="e-medecin">
             <option *ngIf="!medecinDansListe(r.medecin_id)" [ngValue]="r.medecin_id">Dr {{ r.medecin?.user?.name }} (actuel)</option>
-            <option *ngFor="let m of medecins()" [ngValue]="m.id">Dr {{ m.user?.name }} — {{ m.specialite?.nom }}</option>
+            <option *ngFor="let m of medecins()" [ngValue]="m.id">Dr {{ m.user?.name }} — {{ m.specialites_libelle }}</option>
           </select>
         </div>
       </div>
@@ -74,7 +74,7 @@ import { PaginationComponent } from '../pagination/pagination';
         <label>Statut</label>
         <select [(ngModel)]="filtres.statut" name="statut" (change)="charger(1)">
           <option value="">Tous</option><option value="en_attente">En attente</option><option value="confirme">Confirmé</option>
-          <option value="annule">Annulé</option><option value="termine">Terminé</option>
+          <option value="refuse">Refusé</option><option value="annule">Annulé</option><option value="termine">Terminé</option>
         </select>
       </div>
       <div class="field"><label>Du</label><input type="date" [(ngModel)]="filtres.du" name="du" (change)="charger(1)"></div>
@@ -108,13 +108,14 @@ import { PaginationComponent } from '../pagination/pagination';
           <app-avatar [url]="r.medecin?.user?.photo_url" [nom]="r.medecin?.user?.name || ''" [taille]="40"></app-avatar>
           <div>
             <div><span class="muted">Médecin</span> Dr {{ r.medecin?.user?.name }}</div>
-            <div class="muted">{{ r.medecin?.specialite?.nom }}</div>
+            <div class="muted">{{ r.medecin?.specialites_libelle }}</div>
           </div>
         </div>
         <span class="badge" [ngClass]="r.statut">{{ libelle(r.statut) }}</span>
         <div class="row">
           <button *ngIf="r.statut === 'en_attente'" class="btn ok small" (click)="rapide(r, 'confirme')">Confirmer</button>
-          <button *ngIf="r.statut === 'en_attente' || r.statut === 'confirme'" class="btn danger small" (click)="rapide(r, 'annule')">Annuler</button>
+          <button *ngIf="r.statut === 'en_attente'" class="btn danger small" (click)="rapide(r, 'refuse')">Refuser</button>
+          <button *ngIf="r.statut === 'confirme'" class="btn danger small" (click)="rapide(r, 'annule')">Annuler</button>
           <button class="btn light small" (click)="intervenir(r)">Intervenir</button>
         </div>
       </div>
@@ -218,8 +219,8 @@ export class RendezVousAdminComponent implements OnInit {
     this.envoyer(r, data, true);
   }
 
-  rapide(r: any, statut: 'confirme' | 'annule') {
-    if (statut === 'annule' && !confirm('Annuler ce rendez-vous ?')) return;
+  rapide(r: any, statut: 'confirme' | 'refuse' | 'annule') {
+    if (statut !== 'confirme' && !confirm(statut === 'refuse' ? 'Refuser cette demande ?' : 'Annuler ce rendez-vous ?')) return;
     this.envoyer(r, { statut }, false);
   }
 

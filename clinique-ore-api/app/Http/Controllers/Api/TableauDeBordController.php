@@ -21,14 +21,15 @@ class TableauDeBordController extends Controller
             $date = now()->addDays($i)->toDateString();
             $parJour[] = [
                 'date' => $date,
-                'total' => RendezVous::whereDate('date_heure', $date)->where('statut', '!=', 'annule')->count(),
+                'total' => RendezVous::whereDate('date_heure', $date)->whereNotIn('statut', ['annule', 'refuse'])->count(),
             ];
         }
 
         // Rendez-vous par spécialité (non annulés)
-        $rdvParSpecialite = RendezVous::join('medecins', 'rendez_vous.medecin_id', '=', 'medecins.id')
-            ->join('specialites', 'medecins.specialite_id', '=', 'specialites.id')
-            ->where('rendez_vous.statut', '!=', 'annule')
+        // un rendez-vous compte pour chacune des spécialités du médecin
+        $rdvParSpecialite = RendezVous::join('medecin_specialite', 'rendez_vous.medecin_id', '=', 'medecin_specialite.medecin_id')
+            ->join('specialites', 'medecin_specialite.specialite_id', '=', 'specialites.id')
+            ->whereNotIn('rendez_vous.statut', ['annule', 'refuse'])
             ->groupBy('specialites.id', 'specialites.nom')
             ->select('specialites.nom as nom', DB::raw('count(*) as total'))
             ->orderByDesc('total')
@@ -48,9 +49,10 @@ class TableauDeBordController extends Controller
                 'inactifs' => Medecin::whereHas('user', fn ($u) => $u->where('actif', false))->count(),
             ],
             'rendez_vous' => [
-                'aujourdhui' => RendezVous::whereDate('date_heure', $aujourdhui)->where('statut', '!=', 'annule')->count(),
+                'aujourdhui' => RendezVous::whereDate('date_heure', $aujourdhui)->whereNotIn('statut', ['annule', 'refuse'])->count(),
                 'en_attente' => RendezVous::where('statut', 'en_attente')->count(),
                 'confirmes' => RendezVous::where('statut', 'confirme')->count(),
+                'refuses' => RendezVous::where('statut', 'refuse')->count(),
                 'annules' => RendezVous::where('statut', 'annule')->count(),
                 'termines' => RendezVous::where('statut', 'termine')->count(),
                 'total' => RendezVous::count(),

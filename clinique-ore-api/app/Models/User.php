@@ -19,6 +19,9 @@ class User extends Authenticatable
         'telephone',
         'photo',
         'actif',
+        'nom',
+        'prenom',
+        'adresse',
     ];
 
     protected $hidden = [
@@ -37,6 +40,38 @@ class User extends Authenticatable
             'password' => 'hashed',
             'actif' => 'boolean',
         ];
+    }
+
+    // « name » reste le nom complet (affichage et recherche) : il est recalculé à partir du prénom et du nom
+    protected static function booted(): void
+    {
+        static::saving(function (User $user) {
+            if ($user->isDirty('nom') || $user->isDirty('prenom')) {
+                $complet = trim(trim((string) $user->prenom) . ' ' . trim((string) $user->nom));
+                if ($complet !== '') {
+                    $user->name = $complet;
+                }
+            } elseif ($user->isDirty('name')) {
+                [$prenom, $nom] = self::separerNomComplet((string) $user->name);
+                $user->prenom = $prenom;
+                $user->nom = $nom;
+            }
+        });
+    }
+
+    // « Awa Diop » => ['Awa', 'Diop'] ; un seul mot => [null, mot]
+    public static function separerNomComplet(string $nomComplet): array
+    {
+        $parts = preg_split('/\s+/', trim($nomComplet), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if (count($parts) === 0) {
+            return [null, null];
+        }
+        if (count($parts) === 1) {
+            return [null, $parts[0]];
+        }
+
+        return [array_shift($parts), implode(' ', $parts)];
     }
 
     // URL publique de la photo de profil (servie par PhotoController), null si aucune

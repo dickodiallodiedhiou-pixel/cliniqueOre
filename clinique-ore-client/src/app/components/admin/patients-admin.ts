@@ -61,6 +61,8 @@ import { PaginationComponent } from '../pagination/pagination';
           <div class="infos">
             <div><span class="muted">Inscrit le</span><br>{{ d.user?.created_at | date: 'dd/MM/yyyy' }}</div>
             <div><span class="muted">Date de naissance</span><br>{{ d.date_naissance ? (d.date_naissance | date: 'dd/MM/yyyy') : 'Non renseignée' }}</div>
+            <div><span class="muted">Sexe</span><br>{{ d.sexe === 'M' ? 'Masculin' : d.sexe === 'F' ? 'Féminin' : 'Non précisé' }}</div>
+            <div><span class="muted">Adresse</span><br>{{ d.user?.adresse || 'Non renseignée' }}</div>
             <div><span class="muted">Rendez-vous au total</span><br>{{ d.rendez_vous_count }}</div>
           </div>
           <div class="pastilles" *ngIf="statuts(d).length > 0">

@@ -15,6 +15,9 @@ class Medecin extends Model
 
     protected $table = 'medecins';
 
+    // Libellé des spécialités (ex. « Cardiologie, Pédiatrie »), ajouté aux réponses JSON
+    protected $appends = ['specialites_libelle'];
+
     protected $fillable = [
         'user_id',
         'specialite_id',
@@ -43,7 +46,40 @@ class Medecin extends Model
         return $this->belongsTo(User::class);
     }
 
-    // Lien vers la spécialité du médecin
+    // Un médecin a 1..* spécialités (la première est la spécialité principale, mémorisée dans specialite_id)
+    public function specialites()
+    {
+        return $this->belongsToMany(Specialite::class, 'medecin_specialite');
+    }
+
+    // Remplace les spécialités du médecin ; la première de la liste devient la principale
+    public function definirSpecialites(array $ids): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+
+        $this->specialites()->sync($ids);
+        $this->update(['specialite_id' => $ids[0]]);
+        $this->unsetRelation('specialites');
+    }
+
+    // Spécialités avec la principale en premier
+    public function specialitesOrdonnees()
+    {
+        return $this->specialites->sortBy(fn ($s) => $s->id === $this->specialite_id ? 0 : 1)->values();
+    }
+
+    public function getSpecialitesLibelleAttribute(): ?string
+    {
+        if ($this->relationLoaded('specialites')) {
+            $noms = $this->specialitesOrdonnees()->pluck('nom')->all();
+
+            return $noms ? implode(', ', $noms) : null;
+        }
+
+        return $this->relationLoaded('specialite') ? $this->specialite?->nom : null;
+    }
+
+    // Lien vers la spécialité principale du médecin
     public function specialite()
     {
         return $this->belongsTo(Specialite::class);
@@ -59,6 +95,18 @@ class Medecin extends Model
     public function disponibilites()
     {
         return $this->hasMany(Disponibilite::class);
+    }
+
+    // Seules les plages actives génèrent des créneaux
+    public function disponibilitesActives()
+    {
+        return $this->hasMany(Disponibilite::class)->where('actif', true);
+    }
+
+    // Congés et indisponibilités ponctuelles
+    public function indisponibilites()
+    {
+        return $this->hasMany(Indisponibilite::class);
     }
 
     // Pièces justificatives fournies à l'inscription

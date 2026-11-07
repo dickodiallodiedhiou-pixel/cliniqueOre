@@ -22,9 +22,9 @@ class Specialite extends Model
         return ['actif' => 'boolean'];
     }
 
-    // Une spécialité est exercée par plusieurs médecins
+    // Une spécialité est exercée par 0..* médecins (un médecin peut avoir plusieurs spécialités)
     public function medecins()
     {
-        return $this->hasMany(Medecin::class);
+        return $this->belongsToMany(Medecin::class, 'medecin_specialite');
     }
 }

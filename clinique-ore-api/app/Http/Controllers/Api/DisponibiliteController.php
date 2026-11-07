@@ -10,14 +10,15 @@ use Illuminate\Validation\ValidationException;
 
 class DisponibiliteController extends Controller
 {
-    // Disponibilités du médecin connecté (route protégée par medecin.approuve)
+    private const COLONNES = ['id', 'jour', 'heure_debut', 'heure_fin', 'duree', 'actif'];
+
+    // Disponibilités du médecin connecté, actives ou non (route protégée par medecin.approuve)
     public function index(Request $request)
     {
         $medecin = $request->attributes->get('medecin');
 
         return response()->json(
-            $medecin->disponibilites()->orderBy('jour')->orderBy('heure_debut')
-                ->get(['id', 'jour', 'heure_debut', 'heure_fin', 'duree'])
+            $medecin->disponibilites()->orderBy('jour')->orderBy('heure_debut')->get(self::COLONNES)
         );
     }
 
@@ -32,6 +33,7 @@ class DisponibiliteController extends Controller
             'plages.*.heure_debut' => 'required|date_format:H:i',
             'plages.*.heure_fin' => 'required|date_format:H:i',
             'plages.*.duree' => 'required|integer|in:15,20,30,45,60',
+            'plages.*.actif' => 'sometimes|boolean',
         ], [
             'plages.*.jour.between' => 'Jour invalide.',
             'plages.*.heure_debut.date_format' => "L'heure de début est invalide.",
@@ -41,7 +43,7 @@ class DisponibiliteController extends Controller
 
         $plages = $data['plages'];
 
-        // Cohérence des horaires : fin après début, au moins un créneau, pas de chevauchement
+        // Cohérence des horaires : fin après début, au moins un créneau par plage
         foreach ($plages as $p) {
             if ($p['heure_fin'] <= $p['heure_debut']) {
                 throw ValidationException::withMessages([
@@ -56,13 +58,14 @@ class DisponibiliteController extends Controller
             }
         }
 
-        $parJour = collect($plages)->groupBy('jour');
-        foreach ($parJour as $liste) {
+        // Pas de chevauchement le même jour entre plages ACTIVES (une plage inactive peut être conservée)
+        $actives = collect($plages)->filter(fn ($p) => $p['actif'] ?? true)->groupBy('jour');
+        foreach ($actives as $liste) {
             $triees = $liste->sortBy('heure_debut')->values();
             for ($i = 1; $i < $triees->count(); $i++) {
                 if ($triees[$i]['heure_debut'] < $triees[$i - 1]['heure_fin']) {
                     throw ValidationException::withMessages([
-                        'plages' => 'Deux plages horaires se chevauchent le même jour.',
+                        'plages' => 'Deux plages horaires actives se chevauchent le même jour.',
                     ]);
                 }
             }
@@ -78,14 +81,14 @@ class DisponibiliteController extends Controller
                     'heure_debut' => $p['heure_debut'],
                     'heure_fin' => $p['heure_fin'],
                     'duree' => $p['duree'],
+                    'actif' => $p['actif'] ?? true,
                 ]);
             }
         });
 
         return response()->json([
             'message' => 'Disponibilités enregistrées.',
-            'plages' => $medecin->disponibilites()->orderBy('jour')->orderBy('heure_debut')
-                ->get(['id', 'jour', 'heure_debut', 'heure_fin', 'duree']),
+            'plages' => $medecin->disponibilites()->orderBy('jour')->orderBy('heure_debut')->get(self::COLONNES),
         ]);
     }
 }

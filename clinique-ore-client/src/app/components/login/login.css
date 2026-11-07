@@ -1,1 +1,3 @@
 /* Styles partagés : voir src/styles.css */
+
+.oubli { align-self: flex-end; font-size: .85rem; margin-top: 2px; }

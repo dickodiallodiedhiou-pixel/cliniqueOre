@@ -37,13 +37,15 @@ export class RegisterComponent implements OnInit, OnDestroy {
     prenom: '',
     email: '',
     telephone: '',
+    adresse: '',
+    sexe: '', // M, F ou vide (patient)
     password: '',
     password_confirmation: ''
   };
 
   // Informations professionnelles (médecin)
   medecin = {
-    specialite_id: null as number | null,
+    specialite_ids: [] as number[], // la première cochée est la spécialité principale
     numero_ordre: '',
     tarif_consultation: null as number | null,
     biographie: ''
@@ -152,14 +154,27 @@ export class RegisterComponent implements OnInit, OnDestroy {
     }
   }
 
-  private fullName(): string {
-    return `${this.userData.prenom} ${this.userData.nom}`.trim();
+  estChoisie(id: number): boolean {
+    return this.medecin.specialite_ids.includes(id);
+  }
+
+  basculerSpecialite(id: number) {
+    this.medecin.specialite_ids = this.estChoisie(id)
+      ? this.medecin.specialite_ids.filter((x) => x !== id)
+      : [...this.medecin.specialite_ids, id];
   }
 
   // Champs communs patient / médecin
   private baseForm(): FormData {
     const form = new FormData();
-    form.append('name', this.fullName());
+    form.append('prenom', this.userData.prenom.trim());
+    form.append('nom', this.userData.nom.trim());
+    if (this.userData.adresse.trim()) {
+      form.append('adresse', this.userData.adresse.trim());
+    }
+    if (this.accountType() === 'patient' && this.userData.sexe) {
+      form.append('sexe', this.userData.sexe);
+    }
     form.append('email', this.userData.email);
     form.append('telephone', this.userData.telephone);
     form.append('password', this.userData.password);
@@ -181,8 +196,8 @@ export class RegisterComponent implements OnInit, OnDestroy {
   }
 
   private registerMedecin() {
-    if (!this.medecin.specialite_id) {
-      return this.echec('Choisissez votre spécialité.');
+    if (this.medecin.specialite_ids.length === 0) {
+      return this.echec('Choisissez au moins une spécialité.');
     }
     const manquant = this.justificatifs.find((j) => !j.file);
     if (manquant) {
@@ -190,7 +205,9 @@ export class RegisterComponent implements OnInit, OnDestroy {
     }
 
     const form = this.baseForm();
-    form.append('specialite_id', String(this.medecin.specialite_id));
+    for (const id of this.medecin.specialite_ids) {
+      form.append('specialite_ids[]', String(id));
+    }
     form.append('numero_ordre', this.medecin.numero_ordre);
     form.append('tarif_consultation', String(this.medecin.tarif_consultation ?? ''));
     if (this.medecin.biographie) {

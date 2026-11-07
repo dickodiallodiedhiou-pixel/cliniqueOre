@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService } from '../../services/api';
+import { nomsSpecialites } from '../../services/ui';
 import { AvatarComponent } from '../avatar/avatar';
 import { SiteFooterComponent } from '../site-footer/site-footer';
 import { SiteHeaderComponent } from '../site-header/site-header';
@@ -38,7 +39,7 @@ import { SiteHeaderComponent } from '../site-header/site-header';
           <app-avatar [url]="m.photo_url" [nom]="m.nom" [taille]="64"></app-avatar>
           <div>
             <h3>Dr {{ m.nom }}</h3>
-            <span class="badge">{{ m.specialite }}</span>
+            <span class="badge" *ngFor="let s of m.specialites">{{ s.nom }}</span>
           </div>
         </div>
         <p *ngIf="m.biographie" class="muted">{{ m.biographie }}</p>
@@ -77,7 +78,7 @@ export class AnnuaireComponent implements OnInit {
   filtreSpec = signal<string | null>(null);
 
   specialitesDispo = computed(() => {
-    const noms = this.medecins().map((m) => m.specialite as string).filter(Boolean);
+    const noms = this.medecins().flatMap((m) => nomsSpecialites(m));
     return [...new Set(noms)].sort();
   });
 
@@ -86,8 +87,8 @@ export class AnnuaireComponent implements OnInit {
     const spec = this.filtreSpec();
     return this.medecins().filter(
       (m) =>
-        (!spec || m.specialite === spec) &&
-        (!q || `${m.nom} ${m.specialite}`.toLowerCase().includes(q))
+        (!spec || nomsSpecialites(m).includes(spec)) &&
+        (!q || `${m.nom} ${m.specialites_libelle}`.toLowerCase().includes(q))
     );
   });
 

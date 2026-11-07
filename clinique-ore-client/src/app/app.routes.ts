@@ -3,8 +3,19 @@ import { inject } from '@angular/core';
 import { AccueilComponent } from './components/accueil/accueil';
 import { LoginComponent } from './components/login/login';
 import { RegisterComponent } from './components/register/register';
-import { PatientComponent } from './components/patient/patient';
-import { MedecinComponent } from './components/medecin/medecin';
+import { PatientLayoutComponent } from './components/patient/patient-layout';
+import { TableauPatientComponent } from './components/patient/tableau-patient';
+import { MesRendezVousComponent } from './components/patient/mes-rendez-vous';
+import { NouveauRendezVousComponent } from './components/patient/nouveau-rendez-vous';
+import { MedecinsPatientComponent } from './components/patient/medecins-patient';
+import { ProfilMedecinPatientComponent } from './components/patient/profil-medecin';
+import { NotificationsPatientComponent } from './components/patient/notifications-patient';
+import { MotDePasseOublieComponent } from './components/mot-de-passe/mot-de-passe-oublie';
+import { ReinitialiserMotDePasseComponent } from './components/mot-de-passe/reinitialiser-mot-de-passe';
+import { MedecinLayoutComponent } from './components/medecin/medecin-layout';
+import { TableauMedecinComponent } from './components/medecin/tableau-medecin';
+import { RendezVousMedecinComponent } from './components/medecin/rendez-vous-medecin';
+import { PlanningMedecinComponent } from './components/medecin/planning-medecin';
 import { AdminLayoutComponent } from './components/admin/admin-layout';
 import { TableauDeBordComponent } from './components/admin/tableau-de-bord';
 import { ValidationsComponent } from './components/admin/validations';
@@ -22,13 +33,36 @@ export const routes: Routes = [
   { path: '', component: AccueilComponent, pathMatch: 'full' },
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
+  { path: 'mot-de-passe-oublie', component: MotDePasseOublieComponent },
+  { path: 'reinitialiser-mot-de-passe', component: ReinitialiserMotDePasseComponent },
 
   // Public : médecins vérifiés uniquement
   { path: 'annuaire', component: AnnuairePageComponent },
 
   // Espaces par rôle
-  { path: 'patient', component: PatientComponent, canActivate: [roleGuard('patient')] },
-  { path: 'medecin', component: MedecinComponent, canActivate: [roleGuard('medecin')] },
+  {
+    path: 'patient',
+    component: PatientLayoutComponent,
+    canActivate: [roleGuard('patient')],
+    children: [
+      { path: '', component: TableauPatientComponent, pathMatch: 'full' },
+      { path: 'rendez-vous', component: MesRendezVousComponent },
+      { path: 'rendez-vous/nouveau', component: NouveauRendezVousComponent },
+      { path: 'medecins', component: MedecinsPatientComponent },
+      { path: 'medecins/:id', component: ProfilMedecinPatientComponent },
+      { path: 'notifications', component: NotificationsPatientComponent }
+    ]
+  },
+  {
+    path: 'medecin',
+    component: MedecinLayoutComponent,
+    canActivate: [roleGuard('medecin')],
+    children: [
+      { path: '', component: TableauMedecinComponent, pathMatch: 'full' },
+      { path: 'rendez-vous', component: RendezVousMedecinComponent },
+      { path: 'planning', component: PlanningMedecinComponent }
+    ]
+  },
   {
     path: 'admin',
     component: AdminLayoutComponent,

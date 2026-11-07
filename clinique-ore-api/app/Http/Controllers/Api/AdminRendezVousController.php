@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activite;
 use App\Models\Medecin;
 use App\Models\RendezVous;
+use App\Services\NotificationRendezVous;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,13 +17,14 @@ class AdminRendezVousController extends Controller
         'patient.user:id,name,telephone,photo',
         'medecin.user:id,name,photo',
         'medecin.specialite:id,nom',
+        'medecin.specialites:id,nom',
     ];
 
     // Supervision : ?medecin_id= &patient_id= &patient= (nom/téléphone) &statut= &du= &au= &tri=asc|desc
     public function index(Request $request)
     {
         $request->validate([
-            'statut' => ['nullable', Rule::in(['en_attente', 'confirme', 'annule', 'termine'])],
+            'statut' => ['nullable', Rule::in(['en_attente', 'confirme', 'refuse', 'annule', 'termine'])],
             'du' => 'nullable|date',
             'au' => 'nullable|date',
         ]);
@@ -76,10 +78,10 @@ class AdminRendezVousController extends Controller
     }
 
     // Intervention de l'administrateur : changer le statut, déplacer ou réaffecter un rendez-vous
-    public function update(Request $request, RendezVous $rendezVous)
+    public function update(Request $request, RendezVous $rendezVous, NotificationRendezVous $notifications)
     {
         $data = $request->validate([
-            'statut' => ['sometimes', Rule::in(['en_attente', 'confirme', 'annule', 'termine'])],
+            'statut' => ['sometimes', Rule::in(['en_attente', 'confirme', 'refuse', 'annule', 'termine'])],
             'date_heure' => 'sometimes|date',
             'medecin_id' => [
                 'sometimes',
@@ -105,11 +107,11 @@ class AdminRendezVousController extends Controller
         $dateHeure = Carbon::parse($data['date_heure'] ?? $rendezVous->date_heure)->format('Y-m-d H:i:00');
 
         // Un médecin ne peut pas avoir deux rendez-vous actifs au même moment
-        if ($statut !== 'annule') {
+        if (!in_array($statut, ['annule', 'refuse'], true)) {
             $conflit = RendezVous::where('id', '!=', $rendezVous->id)
                 ->where('medecin_id', $medecinId)
                 ->where('date_heure', $dateHeure)
-                ->where('statut', '!=', 'annule')
+                ->whereNotIn('statut', ['annule', 'refuse'])
                 ->exists();
 
             if ($conflit) {
@@ -124,6 +126,20 @@ class AdminRendezVousController extends Controller
             'medecin_id' => $medecinId,
             'date_heure' => $dateHeure,
         ]);
+
+        // Le patient est prévenu de l'intervention de la clinique
+        $evenement = null;
+        if ($statut !== $avant['statut']) {
+            $evenement = match ($statut) {
+                'confirme', 'refuse', 'annule', 'termine' => $statut,
+                default => 'modifie',
+            };
+        } elseif (Carbon::parse($dateHeure)->format('Y-m-d H:i') !== $avant['date_heure'] || $medecinId !== (int) $avant['medecin_id']) {
+            $evenement = 'modifie';
+        }
+        if ($evenement) {
+            $notifications->notifierPatient($rendezVous->fresh(), $evenement);
+        }
 
         Activite::enregistrer($request->user(), 'rdv_modifie', 'rendez_vous', $rendezVous->id, [
             'avant' => $avant,

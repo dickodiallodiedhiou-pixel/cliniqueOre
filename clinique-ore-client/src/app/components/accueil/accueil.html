@@ -130,7 +130,7 @@
     <a class="card vedette" *ngFor="let m of vedettes()" routerLink="/annuaire" [queryParams]="{ q: m.nom }">
       <app-avatar [url]="m.photo_url" [nom]="m.nom" [taille]="80"></app-avatar>
       <h3>Dr {{ m.nom }}</h3>
-      <span class="badge">{{ m.specialite }}</span>
+      <span class="badge">{{ m.specialites_libelle }}</span>
     </a>
   </div>
   <p style="text-align: center; margin-top: 8px">

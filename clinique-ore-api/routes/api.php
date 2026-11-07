@@ -9,7 +9,12 @@ use App\Http\Controllers\Api\AdminSpecialiteController;
 use App\Http\Controllers\Api\TableauDeBordController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DisponibiliteController;
+use App\Http\Controllers\Api\EspaceMedecinController;
+use App\Http\Controllers\Api\IndisponibiliteController;
+use App\Http\Controllers\Api\EspacePatientController;
 use App\Http\Controllers\Api\MedecinController;
+use App\Http\Controllers\Api\MotDePasseController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PhotoController;
 use App\Http\Controllers\Api\ProfilController;
 use App\Http\Controllers\Api\RendezVousController;
@@ -19,6 +24,8 @@ use App\Http\Controllers\Api\SpecialiteController;
 Route::post('/register', [AuthController::class, 'registerPatient']);
 Route::post('/register/medecin', [AuthController::class, 'registerMedecin']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/mot-de-passe/oublie', [MotDePasseController::class, 'oublie'])->middleware('throttle:5,1');
+Route::post('/mot-de-passe/reinitialiser', [MotDePasseController::class, 'reinitialiser'])->middleware('throttle:10,1');
 Route::get('/specialites', [SpecialiteController::class, 'index']);
 Route::get('/photos/{fichier}', [PhotoController::class, 'show'])
     ->where('fichier', '[A-Za-z0-9]{20,64}\.(?:jpg|jpeg|png|webp)');
@@ -32,7 +39,14 @@ Route::get('/medecins/{id}/creneaux', [MedecinController::class, 'creneaux'])->w
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/me', [ProfilController::class, 'update']); // POST car la requête contient une photo (multipart)
+    Route::post('/me/mot-de-passe', [ProfilController::class, 'motDePasse']);
+    Route::post('/me', [ProfilController::class, 'update']);
+
+    // Notifications de l'utilisateur connecté
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/non-lues', [NotificationController::class, 'nonLues']);
+    Route::post('/notifications/tout-lire', [NotificationController::class, 'toutLire']);
+    Route::post('/notifications/{id}/lire', [NotificationController::class, 'lire'])->whereUuid('id'); // POST car la requête contient une photo (multipart)
 
     // Liste des rendez-vous : le contenu dépend du rôle (contrôlé dans le contrôleur)
     Route::get('/rendez-vous', [RendezVousController::class, 'index']);
@@ -42,13 +56,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/rendez-vous', [RendezVousController::class, 'store']);
         Route::patch('/rendez-vous/{rendezVous}', [RendezVousController::class, 'modifier']);
         Route::post('/rendez-vous/{rendezVous}/annuler', [RendezVousController::class, 'annuler']);
+        Route::get('/historique', [RendezVousController::class, 'historiquePatient']);
+        Route::get('/patient/tableau-de-bord', [EspacePatientController::class, 'tableauDeBord']);
+        Route::get('/patient/rendez-vous', [EspacePatientController::class, 'rendezVous']);
     });
 
     // Médecins APPROUVÉS uniquement : accepter / refuser / terminer un rendez-vous
     Route::middleware('medecin.approuve')->group(function () {
         Route::patch('/rendez-vous/{rendezVous}/statut', [RendezVousController::class, 'updateStatut']);
+        Route::patch('/rendez-vous/{rendezVous}/notes', [RendezVousController::class, 'modifierNotes']);
+        Route::get('/medecin/historique', [RendezVousController::class, 'historiqueMedecin']);
         Route::get('/medecin/disponibilites', [DisponibiliteController::class, 'index']);
         Route::put('/medecin/disponibilites', [DisponibiliteController::class, 'update']);
+
+        // Espace médecin : tableau de bord, rendez-vous, fiche patient, planning, congés
+        Route::get('/medecin/tableau-de-bord', [EspaceMedecinController::class, 'tableauDeBord']);
+        Route::get('/medecin/rendez-vous', [EspaceMedecinController::class, 'rendezVous']);
+        Route::get('/medecin/patients/{patient}', [EspaceMedecinController::class, 'patient']);
+        Route::get('/medecin/planning', [EspaceMedecinController::class, 'planning']);
+        Route::get('/medecin/indisponibilites', [IndisponibiliteController::class, 'index']);
+        Route::post('/medecin/indisponibilites', [IndisponibiliteController::class, 'store']);
+        Route::delete('/medecin/indisponibilites/{id}', [IndisponibiliteController::class, 'destroy'])->whereNumber('id');
     });
 
     // Administrateur uniquement

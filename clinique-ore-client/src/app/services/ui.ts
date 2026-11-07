@@ -3,6 +3,7 @@ export function libelleRdv(statut: string): string {
   const map: Record<string, string> = {
     en_attente: 'En attente',
     confirme: 'Confirmé',
+    refuse: 'Refusé',
     annule: 'Annulé',
     termine: 'Terminé'
   };
@@ -47,4 +48,43 @@ export function libelleAction(action: string): string {
     rdv_modifie: 'Rendez-vous modifié'
   };
   return map[action] ?? action;
+}
+
+// Dates 'YYYY-MM-DD' en heure locale (sans décalage de fuseau)
+export function formatDate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const j = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${j}`;
+}
+
+export function ajouterJours(date: string, n: number): string {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return formatDate(d);
+}
+
+// Lundi de la semaine contenant la date donnée
+export function lundiDe(date: Date = new Date()): string {
+  const d = new Date(date);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return formatDate(d);
+}
+
+export const JOURS_SEMAINE = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+export function nomJour(n: number): string {
+  return JOURS_SEMAINE[n] ?? '';
+}
+
+// Noms des spécialités d'un médecin (la première est la spécialité principale)
+export function nomsSpecialites(m: any): string[] {
+  return (m?.specialites ?? []).map((s: any) => s.nom);
+}
+
+// « Awa Diop » -> ['Awa', 'Diop'] ; un seul mot -> ['', mot]
+export function separerNomComplet(nomComplet: string): [string, string] {
+  const parts = (nomComplet || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ['', ''];
+  if (parts.length === 1) return ['', parts[0]];
+  return [parts[0], parts.slice(1).join(' ')];
 }
