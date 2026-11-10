@@ -60,7 +60,8 @@ export const routes: Routes = [
     children: [
       { path: '', component: TableauMedecinComponent, pathMatch: 'full' },
       { path: 'rendez-vous', component: RendezVousMedecinComponent },
-      { path: 'planning', component: PlanningMedecinComponent }
+      { path: 'planning', component: PlanningMedecinComponent },
+      { path: 'notifications', component: NotificationsPatientComponent }
     ]
   },
   {

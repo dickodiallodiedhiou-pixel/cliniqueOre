@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 import { NotificationsService } from '../../services/notifications';
 import { PaginationComponent } from '../pagination/pagination';
 
@@ -15,7 +16,7 @@ import { PaginationComponent } from '../pagination/pagination';
       <div class="ligne">
         <div class="grow">
           <h1>Notifications</h1>
-          <p class="muted" style="margin: 0">Les réponses des médecins et les changements sur vos rendez-vous.</p>
+          <p class="muted" style="margin: 0">Rappels, réponses et changements concernant vos rendez-vous.</p>
         </div>
         <button class="btn light small" *ngIf="nonLues() > 0" (click)="toutLire()">Tout marquer comme lu</button>
       </div>
@@ -33,7 +34,7 @@ import { PaginationComponent } from '../pagination/pagination';
           <div class="muted" style="margin-top: 4px">{{ n.created_at | date: 'dd/MM/yyyy à HH:mm' }}</div>
         </div>
         <div class="row">
-          <a routerLink="/patient/rendez-vous" class="btn light small" *ngIf="n.data.rendez_vous_id">Voir mes rendez-vous</a>
+          <a [routerLink]="lienRendezVous" class="btn light small" *ngIf="n.data.rendez_vous_id">Voir les rendez-vous</a>
           <button class="btn light small" *ngIf="!n.read_at" (click)="lire(n)">Marquer comme lu</button>
         </div>
       </div>
@@ -46,6 +47,9 @@ import { PaginationComponent } from '../pagination/pagination';
 export class NotificationsPatientComponent implements OnInit {
   private api = inject(ApiService);
   private service = inject(NotificationsService);
+
+  // Le même écran sert au patient et au médecin
+  lienRendezVous = inject(AuthService).role === 'medecin' ? '/medecin/rendez-vous' : '/patient/rendez-vous';
 
   liste = signal<any[]>([]);
   page = signal(1);

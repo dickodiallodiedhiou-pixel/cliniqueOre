@@ -563,7 +563,7 @@ class RolesEtValidationTest extends TestCase
         $this->postJson('/api/admin/medecins', [
             'name' => 'Dr Test', 'email' => 'test@clinique.sn', 'password' => 'motdepasse1',
             'telephone' => '771234567', 'specialite_id' => $id, 'numero_ordre' => 'ORD-1', 'tarif_consultation' => 5000,
-                ])->assertStatus(422)->assertJsonValidationErrors('specialite_ids.0');
+        ])->assertStatus(422)->assertJsonValidationErrors('specialite_ids.0');
     }
 
     public function test_admin_filtre_les_rendez_vous(): void
@@ -1290,5 +1290,98 @@ class RolesEtValidationTest extends TestCase
 
         $u->update(['name' => 'Aminata Ba Diallo']);
         $this->assertSame(['Aminata', 'Ba Diallo'], [$u->fresh()->prenom, $u->fresh()->nom]);
+    }
+
+    // ---------- Rappels automatiques et notifications du médecin ----------
+
+    public function test_le_patient_recoit_un_rappel_pour_un_rendez_vous_confirme_proche(): void
+    {
+        $medecin = $this->medecinAvecLundi(); // lundi 26/10/2026 à 08:00
+        $patient = $this->patientProfil();
+        $proche = $this->rdv($medecin, $patient, '2026-10-27 04:00:00', 'confirme');  // dans 20 heures
+        $this->rdv($medecin, $patient, '2026-10-29 09:00:00', 'confirme');            // dans 3 jours : trop tôt
+        $this->rdv($medecin, $patient, '2026-10-27 05:00:00', 'en_attente');          // pas confirmé
+        $this->rdv($medecin, $patient, '2026-10-27 06:00:00', 'annule');              // annulé
+
+        $this->artisan('rappels:rendez-vous')->assertSuccessful();
+
+        Sanctum::actingAs($patient->user);
+        $this->getJson('/api/notifications')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.data.evenement', 'rappel')
+            ->assertJsonPath('data.0.data.titre', 'Rappel de rendez-vous');
+        $this->assertNotNull(RendezVous::find($proche->id)->rappel_envoye_le);
+
+        // une seconde exécution n'envoie pas de doublon
+        $this->artisan('rappels:rendez-vous')->assertSuccessful();
+        $this->getJson('/api/notifications')->assertJsonCount(1, 'data');
+    }
+
+    public function test_le_medecin_recoit_son_agenda_du_jour_une_seule_fois(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $this->rdv($medecin, $patient, '2026-10-26 09:30:00', 'confirme');
+        $this->rdv($medecin, $patient, '2026-10-26 10:00:00', 'en_attente');
+        $this->rdv($medecin, $patient, '2026-10-26 10:30:00', 'annule');
+        $sansRendezVous = $this->medecin(Medecin::APPROVED);
+
+        $this->artisan('rappels:rendez-vous --agenda')->assertSuccessful();
+        $this->artisan('rappels:rendez-vous --agenda')->assertSuccessful();
+
+        Sanctum::actingAs($medecin->user);
+        $reponse = $this->getJson('/api/notifications')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.data.evenement', 'agenda');
+        $this->assertStringContainsString('2 rendez-vous', $reponse->json('data.0.data.message'));
+        $this->assertStringContainsString('09:30', $reponse->json('data.0.data.message'));
+
+        // un médecin sans rendez-vous aujourd'hui ne reçoit rien
+        Sanctum::actingAs($sansRendezVous->user);
+        $this->getJson('/api/notifications')->assertJsonCount(0, 'data');
+    }
+
+    public function test_le_medecin_est_notifie_quand_le_patient_reserve_modifie_ou_annule(): void
+    {
+        $medecin = $this->medecinAvecLundi();
+        $this->patientConnecte();
+
+        $id = $this->postJson('/api/rendez-vous', ['medecin_id' => $medecin->id, 'date_heure' => '2026-11-02 09:00'])
+            ->assertCreated()->json('rendez_vous.id');
+        $this->patchJson("/api/rendez-vous/{$id}", ['date_heure' => '2026-11-02 10:00'])->assertOk();
+        $this->postJson("/api/rendez-vous/{$id}/annuler")->assertOk();
+
+        Sanctum::actingAs($medecin->user);
+        $reponse = $this->getJson('/api/notifications')->assertOk()->assertJsonCount(3, 'data')->assertJsonPath('non_lues', 3);
+
+        $evenements = collect($reponse->json('data'))->pluck('data.evenement')->sort()->values()->all();
+        $this->assertSame(['annulation_patient', 'demande_modifiee', 'nouvelle_demande'], $evenements);
+    }
+
+    public function test_l_email_n_est_ajoute_que_si_l_option_est_activee(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $medecin = $this->medecinAvecLundi();
+        $patient = $this->patientProfil();
+        $rdv = $this->rdv($medecin, $patient, '2026-11-02 09:00:00', 'en_attente');
+
+        Sanctum::actingAs($medecin->user);
+
+        // par défaut : notification dans l'application seulement
+        $this->patchJson("/api/rendez-vous/{$rdv->id}/statut", ['statut' => 'confirme'])->assertOk();
+        \Illuminate\Support\Facades\Notification::assertSentTo(
+            $patient->user,
+            \App\Notifications\RendezVousNotification::class,
+            fn ($notification, $canaux) => $canaux === ['database']
+        );
+
+        // option activée : l'email s'ajoute
+        config(['clinique.rappels_email' => true]);
+        $this->patchJson("/api/rendez-vous/{$rdv->id}/statut", ['statut' => 'termine'])->assertOk();
+        \Illuminate\Support\Facades\Notification::assertSentTo(
+            $patient->user,
+            \App\Notifications\RendezVousNotification::class,
+            fn ($notification, $canaux) => in_array('mail', $canaux, true)
+        );
     }
 }

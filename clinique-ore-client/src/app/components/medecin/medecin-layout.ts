@@ -1,8 +1,9 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ApiService } from '../../services/api';
+import { NotificationsService } from '../../services/notifications';
 import { NavbarComponent } from '../navbar/navbar';
 import { IconeComponent } from '../icone/icone';
 import { AvatarComponent } from '../avatar/avatar';
@@ -44,27 +45,38 @@ import { AvatarComponent } from '../avatar/avatar';
              [routerLinkActiveOptions]="{ exact: l.exact }">
             <app-icone [nom]="l.icone"></app-icone>
             <span>{{ l.label }}</span>
+            <span class="nb" *ngIf="l.cle === 'notifications' && notifs.nonLues() > 0">{{ notifs.nonLues() }}</span>
           </a>
         </aside>
         <main class="contenu"><router-outlet></router-outlet></main>
       </div>
     </ng-container>
-  `
+  `,
+  styles: [`
+    .nb { margin-left: auto; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 8px; font-size: .75rem; font-weight: 700; line-height: 1.5; }
+  `]
 })
-export class MedecinLayoutComponent implements OnInit {
+export class MedecinLayoutComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
+  notifs = inject(NotificationsService);
 
   profil = signal<any>(null);
   statut = signal('');
   erreur = signal('');
 
   liens = [
-    { chemin: '/medecin', label: 'Tableau de bord', icone: 'tableau', exact: true },
-    { chemin: '/medecin/rendez-vous', label: 'Rendez-vous', icone: 'rdv', exact: false },
-    { chemin: '/medecin/planning', label: 'Planning et disponibilités', icone: 'planning', exact: false }
+    { cle: 'accueil', chemin: '/medecin', label: 'Tableau de bord', icone: 'tableau', exact: true },
+    { cle: 'rdv', chemin: '/medecin/rendez-vous', label: 'Rendez-vous', icone: 'rdv', exact: false },
+    { cle: 'planning', chemin: '/medecin/planning', label: 'Planning et disponibilités', icone: 'planning', exact: false },
+    { cle: 'notifications', chemin: '/medecin/notifications', label: 'Notifications', icone: 'cloche', exact: false }
   ];
 
+  ngOnDestroy() {
+    this.notifs.arreter();
+  }
+
   ngOnInit() {
+    this.notifs.demarrer();
     // Le statut est relu en base : si l'admin vient de valider le compte, il est pris en compte
     this.api.me().subscribe({
       next: (user) => {

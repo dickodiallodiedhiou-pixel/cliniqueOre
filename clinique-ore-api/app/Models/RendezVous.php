@@ -20,6 +20,7 @@ class RendezVous extends Model
         'statut',
         'motif',
         'notes_medecin',
+        'rappel_envoye_le',
     ];
 
     // Les comptes rendus médicaux ne sont visibles que par le médecin concerné et le patient :

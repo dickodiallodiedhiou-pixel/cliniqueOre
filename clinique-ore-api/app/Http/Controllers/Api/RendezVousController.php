@@ -64,7 +64,7 @@ class RendezVousController extends Controller
     }
 
     // Réservé aux patients (route protégée par role:patient)
-    public function store(Request $request, CreneauService $creneaux)
+    public function store(Request $request, CreneauService $creneaux, NotificationRendezVous $notifications)
     {
         $data = $request->validate([
             'medecin_id' => [
@@ -107,6 +107,8 @@ class RendezVousController extends Controller
             'statut' => 'en_attente',
         ]);
 
+        $notifications->notifierMedecin($rdv, 'nouvelle_demande');
+
         return response()->json([
             'message' => 'Rendez-vous réservé avec succès',
             'rendez_vous' => $rdv,
@@ -114,7 +116,7 @@ class RendezVousController extends Controller
     }
 
     // Le patient reprogramme son rendez-vous sur un autre créneau libre (il repasse en attente de confirmation)
-    public function modifier(Request $request, RendezVous $rendezVous, CreneauService $creneaux)
+    public function modifier(Request $request, RendezVous $rendezVous, CreneauService $creneaux, NotificationRendezVous $notifications)
     {
         $patient = $request->user()->patient;
 
@@ -158,11 +160,13 @@ class RendezVousController extends Controller
             'statut' => 'en_attente', // le médecin doit confirmer le nouvel horaire
         ]);
 
+        $notifications->notifierMedecin($rendezVous, 'demande_modifiee');
+
         return response()->json(['message' => 'Rendez-vous modifié.', 'rendez_vous' => $rendezVous]);
     }
 
     // Le patient annule son propre rendez-vous
-    public function annuler(Request $request, RendezVous $rendezVous)
+    public function annuler(Request $request, RendezVous $rendezVous, NotificationRendezVous $notifications)
     {
         $patient = $request->user()->patient;
 
@@ -182,6 +186,8 @@ class RendezVousController extends Controller
         }
 
         $rendezVous->update(['statut' => 'annule']);
+
+        $notifications->notifierMedecin($rendezVous, 'annulation_patient');
 
         return response()->json(['message' => 'Rendez-vous annulé.', 'rendez_vous' => $rendezVous]);
     }
